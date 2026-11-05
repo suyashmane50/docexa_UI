@@ -1,0 +1,30 @@
+{
+  "app_id": 1,
+  "owner": "Dr.P.C.Pungatiya",
+
+  "app": {
+    "name": "Aashay Clinic",
+    "slug": "aashay-clinic",
+    "scheme": "aashayclinic",
+    "bundleId": "com.abchealth.app"
+  },
+  "info": {
+    "Dr_prefix": "Dr.",
+    "Dr_name": "P.C.",
+    "Dr_surname": "Pungatiya"
+  },
+
+  "theme": {
+    "primary": "#006397",
+    "secondary": "#006C4A",
+    "accent": "#F02A4B"
+  },
+
+  "assets": {
+    "landing_page_image": "assets/user_specific_data/landing_page_image/ashay_clinic.png",
+    "icon": "assets/user_specific_data/app_icons/aashay_clinic.png",
+    "splash": "assets/user_specific_data/splash_images/aashay_clinic.png",
+    "adaptiveIcon": "assets/user_specific_data/adaptive_icons/aashay_clinic.png",
+    "favicon": "assets/user_specific_data/favicons/aashay_clinic.png"
+  }
+}

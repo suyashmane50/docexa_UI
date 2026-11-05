@@ -1,0 +1,64 @@
+{
+  "clients": [
+    {
+      "clientId": "client-001",
+      "clientName": "ABC Healthcare",
+      "appName": "ABC Health App",
+      "appSlug": "abc-health-app",
+      "bundleId": "com.abchealth.app",
+      "packageName": "com.abchealth.app",
+      "scheme": "abchealth",
+      "colors": {
+        "primary": "#006397",
+        "secondary": "#006C4A",
+        "accent": "#F02A4B"
+      },
+      "assets": {
+        "icon": "./assets/clients/client-001/icon.png",
+        "splash": "./assets/clients/client-001/splash.png",
+        "adaptiveIcon": "./assets/clients/client-001/adaptive-icon.png",
+        "favicon": "./assets/clients/client-001/favicon.png"
+      },
+      "appStore": {
+        "ios": {
+          "bundleIdentifier": "com.abchealth.app",
+          "displayName": "ABC Health App"
+        },
+        "android": {
+          "package": "com.abchealth.app",
+          "applicationLabel": "ABC Health App"
+        }
+      }
+    },
+    {
+      "clientId": "client-002",
+      "clientName": "XYZ Medical",
+      "appName": "XYZ Medical Care",
+      "appSlug": "xyz-medical-care",
+      "bundleId": "com.xyzmedical.app",
+      "packageName": "com.xyzmedical.app",
+      "scheme": "xyzmedical",
+      "colors": {
+        "primary": "#8B5CF6",
+        "secondary": "#10B981",
+        "accent": "#EF4444"
+      },
+      "assets": {
+        "icon": "./assets/clients/client-002/icon.png",
+        "splash": "./assets/clients/client-002/splash.png",
+        "adaptiveIcon": "./assets/clients/client-002/adaptive-icon.png",
+        "favicon": "./assets/clients/client-002/favicon.png"
+      },
+      "appStore": {
+        "ios": {
+          "bundleIdentifier": "com.xyzmedical.app",
+          "displayName": "XYZ Medical Care"
+        },
+        "android": {
+          "package": "com.xyzmedical.app",
+          "applicationLabel": "XYZ Medical Care"
+        }
+      }
+    }
+  ]
+}
