@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -11,107 +11,142 @@ import {
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
+
 import { useAbhaStore } from '../../abha/stores/abhaStore';
+
 import { useRouter } from 'expo-router';
+
 import { ABHA } from '../../../../../utils/api';
 
 export default function EnterAadhaarScreen() {
   const router = useRouter();
-  const setTxnId = useAbhaStore((state) => state.setTxnId);
-  const [errorMessage, setErrorMessage] = useState('');
+
+  const setTxnId = useAbhaStore(
+    (state) => state.setTxnId
+  );
+
+  const setAadhaarInStore = useAbhaStore(
+    (state) => state.setAadhaar
+  );
+
+  const [errorMessage, setErrorMessage] =
+    useState('');
+
   const [aadhaar, setAadhaar] = useState('');
+
   const [loading, setLoading] = useState(false);
 
-  // Format Aadhaar number into groups of four digits.
+  // Format Aadhaar number
   const handleAadhaarChange = (text: string) => {
-    const digits = text.replace(/\D/g, '').slice(0, 12);
+    const digits = text
+      .replace(/\D/g, '')
+      .slice(0, 12);
 
-    const formatted = digits.replace(/(\d{4})(?=\d)/g, '$1 ');
+    const formatted = digits.replace(
+      /(\d{4})(?=\d)/g,
+      '$1 '
+    );
 
     setAadhaar(formatted);
   };
 
-const handleSendOtp = async () => {
-  const aadhaarNumber = aadhaar.replace(/\D/g, '');
-  setErrorMessage('');
-  if (aadhaarNumber.length !== 12) {
-    Alert.alert(
-      'Invalid Aadhaar',
-      'Please enter a valid 12-digit Aadhaar number.'
-    );
-    return;
-  }
+  // Send Aadhaar OTP
+  const handleSendOtp = async () => {
+    const aadhaarNumber = aadhaar.replace(/\D/g, '');
 
-  setLoading(true);
+    setErrorMessage('');
 
-  try {
-    const response = await ABHA.post(
-      'enrollment/request/otp',
-      {
-        loginId: aadhaarNumber,
-      }
-    );
-
-    const data = response.data;
-
-    console.log('OTP API response:', data);
-
-    // Handle API errors even when HTTP status is 200.
-    if (data?.Success === false || data?.success === false) {
+    if (aadhaarNumber.length !== 12) {
       Alert.alert(
-        'OTP Request Failed',
-        data?.Message || data?.message || 'Something went wrong.'
+        'Invalid Aadhaar',
+        'Please enter a valid 12-digit Aadhaar number.'
       );
       return;
     }
 
-    const responseJSON = data?.ResponseJSON;
+    setLoading(true);
 
-if (data?.status === 200 && responseJSON?.txnId) {
-  const message = responseJSON.message ?? '';
-
-  const mobileMatch = message.match(
-    /ending with \*+\s*(\d{4})/i
-  );
-
-  const maskedMobile = mobileMatch
-    ? `******${mobileMatch[1]}`
-    : '******';
-
-    setTxnId(String(responseJSON.txnId));
-    router.push({
-      pathname: '/abha/create/otp',
-      params: {
-        mobile: maskedMobile,
-      },
-    });
-}  else {
-      Alert.alert(
-        'OTP Request Failed',
-        data?.Message ||
-          data?.message ||
-          'Unable to send OTP. Please try again.'
+    try {
+      const response = await ABHA.post(
+        'enrollment/request/otp',
+        {
+          loginId: aadhaarNumber,
+        }
       );
+
+      const data = response.data;
+
+      console.log('OTP API response:', data);
+
+      if (
+        data?.Success === false ||
+        data?.success === false
+      ) {
+        Alert.alert(
+          'OTP Request Failed',
+          data?.Message ||
+            data?.message ||
+            'Something went wrong.'
+        );
+        return;
+      }
+
+      const responseJSON = data?.ResponseJSON;
+
+      if (
+        data?.status === 200 &&
+        responseJSON?.txnId
+      ) {
+        const message = responseJSON.message ?? '';
+
+        const mobileMatch = message.match(
+          /ending with \*+\s*(\d{4})/i
+        );
+
+        const maskedMobile = mobileMatch
+          ? `******${mobileMatch[1]}`
+          : '******';
+
+        // Store transaction ID
+        setTxnId(String(responseJSON.txnId));
+
+        // Store Aadhaar for resend OTP
+        setAadhaarInStore(aadhaarNumber);
+
+        // Navigate to OTP screen
+        router.push({
+          pathname: '/abha/create/otp',
+          params: {
+            mobile: maskedMobile,
+          },
+        });
+      } else {
+        Alert.alert(
+          'OTP Request Failed',
+          data?.Message ||
+            data?.message ||
+            'Unable to send OTP. Please try again.'
+        );
+      }
+    } catch (error: any) {
+      const errorData = error?.response?.data;
+
+      console.log(
+        'OTP API error:',
+        errorData ?? error?.message
+      );
+
+      const message =
+        errorData?.Message ||
+        errorData?.message ||
+        error?.message ||
+        'Something went wrong. Please try again.';
+
+      setErrorMessage(message);
+    } finally {
+      setLoading(false);
     }
-} catch (error: any) {
-  const errorData = error?.response?.data;
-
-  console.log('OTP API error:', errorData ?? error?.message);
-
-  const message =
-    errorData?.Message ||
-    errorData?.message ||
-    error?.message ||
-    'Something went wrong. Please try again.';
-
-  console.log('Message to display:', message);
-
-  setErrorMessage(message);
-} finally {
-  setLoading(false);
-}
-
-};
+  };
 
   return (
     <ScrollView
@@ -131,7 +166,6 @@ if (data?.status === 200 && responseJSON?.txnId) {
         Aadhaar number
       </Text>
 
-      {/* Attractive Aadhaar input field */}
       <View style={styles.inputContainer}>
         <View style={styles.inputIconContainer}>
           <Ionicons
@@ -145,7 +179,8 @@ if (data?.status === 200 && responseJSON?.txnId) {
           <Text style={styles.inputLabel}>
             Aadhaar number
           </Text>
-        <TextInput
+
+          <TextInput
             style={styles.input}
             placeholder="XXXX XXXX XXXX"
             placeholderTextColor="#9CA3AF"
@@ -193,7 +228,8 @@ if (data?.status === 200 && responseJSON?.txnId) {
           verification. Avoid storing it unnecessarily.
         </Text>
       </View>
-       {errorMessage !== '' && (
+
+      {errorMessage !== '' && (
         <View style={styles.errorContainer}>
           <Ionicons
             name="alert-circle-outline"
@@ -206,7 +242,6 @@ if (data?.status === 200 && responseJSON?.txnId) {
           </Text>
         </View>
       )}
-         
 
       <TouchableOpacity
         style={[
@@ -256,7 +291,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  // Aadhaar input container
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -300,19 +334,19 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
 
-input: {
-  padding: 0,
-  fontSize: 17,
-  fontWeight: '600',
-  letterSpacing: 1,
-  color: '#1F2937',
-  minHeight: 28,
-  borderWidth: 0,
-  outlineWidth: 0,
-  outlineColor: 'transparent',
-  backgroundColor: 'transparent',
-  ...( { outlineStyle: 'none' } as any ),
-},
+  input: {
+    padding: 0,
+    fontSize: 17,
+    fontWeight: '600',
+    letterSpacing: 1,
+    color: '#1F2937',
+    minHeight: 28,
+    borderWidth: 0,
+    outlineWidth: 0,
+    outlineColor: 'transparent',
+    backgroundColor: 'transparent',
+    ...({ outlineStyle: 'none' } as any),
+  },
 
   securityHint: {
     flexDirection: 'row',

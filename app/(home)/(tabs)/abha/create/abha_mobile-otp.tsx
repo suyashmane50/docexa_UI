@@ -1,4 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+} from 'react';
+
 import {
   View,
   Text,
@@ -8,7 +13,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { useAbhaStore } from '../../abha/stores/abhaStore';
+
 import { Ionicons } from '@expo/vector-icons';
 
 import {
@@ -18,56 +23,100 @@ import {
 
 import { ABHA } from '../../../../../utils/api';
 
+import { useAbhaStore } from '../../abha/stores/abhaStore';
+
+const OTP_TIMER = 30;
+const MAX_RESEND_ATTEMPTS = 2;
+
 export default function MobileOtpScreen() {
-  const [otp, setOtp] = useState([
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-  ]);
+  const router = useRouter();
 
-  const [timer, setTimer] = useState(57);
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
- const router = useRouter();
-
-  // Retrieve the transaction ID from Zustand.
-  const transactionId = useAbhaStore(
+  const storedTransactionId = useAbhaStore(
     (state) => state.txnId
   );
 
-  // Retrieve the entered mobile number from route parameters.
-  const { mobile } = useLocalSearchParams<{
+  const setTxnId = useAbhaStore(
+    (state) => state.setTxnId
+  );
+
+  const {
+    mobile: routeMobile,
+    txnId: routeTxnId,
+  } = useLocalSearchParams<{
     mobile?: string;
+    txnId?: string;
   }>();
+
+  const mobile = routeMobile || '';
+
+  const transactionId =
+    routeTxnId || storedTransactionId;
+
+  const [otp, setOtp] = useState<string[]>(
+    Array(6).fill('')
+  );
+
+  const [timer, setTimer] = useState(OTP_TIMER);
+
+  const [resendAttempts, setResendAttempts] =
+    useState(0);
+
+  const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+
+  const [errorMessage, setErrorMessage] = useState('');
 
   const inputRefs = useRef<Array<TextInput | null>>([]);
 
+  // Verify enabled automatically after all digits
+  const isOtpComplete = otp.every(
+    (digit) => digit !== ''
+  );
+
+  const isVerifyDisabled =
+    !isOtpComplete || loading;
+
+  // Mask mobile only for UI
+  const maskMobileNumber = (
+    mobileNumber: string
+  ) => {
+    const digits = mobileNumber.replace(/\D/g, '');
+
+    if (digits.length < 10) {
+      return '******';
+    }
+
+    return `******${digits.slice(-4)}`;
+  };
+
+  // Countdown
   useEffect(() => {
+    if (timer <= 0) return;
+
     const interval = setInterval(() => {
-      setTimer((prev) => (prev > 0 ? prev - 1 : 0));
+      setTimer((previous) =>
+        previous > 0 ? previous - 1 : 0
+      );
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [timer]);
+
+  // OTP input and paste
   const handleOtpChange = (
     text: string,
     index: number
   ) => {
-    if (!/^\d*$/.test(text)) {
-      return;
-    }
+    if (!/^\d*$/.test(text)) return;
 
     setErrorMessage('');
 
     const newOtp = [...otp];
 
-    // Support pasting the entire OTP into an input.
     if (text.length > 1) {
-      const digits = text.slice(0, 6).split('');
+      const digits = text
+        .replace(/\D/g, '')
+        .slice(0, 6);
 
       for (let i = 0; i < 6; i++) {
         newOtp[i] = digits[i] ?? '';
@@ -75,13 +124,15 @@ export default function MobileOtpScreen() {
 
       setOtp(newOtp);
 
-      const nextIndex = Math.min(digits.length, 5);
-      inputRefs.current[nextIndex]?.focus();
+      inputRefs.current[
+        Math.min(digits.length, 5)
+      ]?.focus();
 
       return;
     }
 
     newOtp[index] = text;
+
     setOtp(newOtp);
 
     if (text && index < 5) {
@@ -89,12 +140,13 @@ export default function MobileOtpScreen() {
     }
   };
 
+  // Backspace
   const handleKeyPress = (
-    e: any,
+    event: any,
     index: number
   ) => {
     if (
-      e.nativeEvent.key === 'Backspace' &&
+      event.nativeEvent.key === 'Backspace' &&
       !otp[index] &&
       index > 0
     ) {
@@ -102,148 +154,263 @@ export default function MobileOtpScreen() {
     }
   };
 
-const handleVerifyOtp = async () => {
-  if (loading) return;
-
-  setErrorMessage('');
-  const enteredOtp = otp.join('');
-
-  if (enteredOtp.length !== 6) {
-    setErrorMessage('Please enter the complete 6-digit OTP.');
-    return;
-  }
-
-  if (!transactionId) {
-    setErrorMessage('Transaction ID is missing. Please request OTP again.');
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    console.log('Verifying mobile OTP...');
-
-    const response = await ABHA.post('/enrollment/auth/byAbdm', {
-      txnId: transactionId,
-      otp: enteredOtp,
-    });
-
-    const data = response.data;
-    console.log('OTP verification HTTP status:', response.status);
-    console.log('OTP verification response:', JSON.stringify(data, null, 2));
-
-    // Backends may return the result/message in different fields.
-    const authResult =
-      data?.Response?.authResult ??
-      data?.response?.authResult ??
-      data?.authResult;
-    const verificationMessage = String(
-      data?.Response?.message ??
-      data?.Response?.Message ??
-      data?.response?.message ??
-      data?.message ??
-      data?.Message ??
-      ''
-    );
-    const resultText = String(authResult ?? '').trim().toLowerCase();
-    const messageText = verificationMessage.toLowerCase();
-
-    const explicitSuccessResult = ['success', 'successful', 'verified'].includes(resultText);
-    const explicitFailureResult = ['failed', 'failure', 'error', 'invalid'].includes(resultText);
-    const successMessage =
-      /successfully linked|mobile number.*verified|mobile.*successfully.*linked|otp verified successfully/.test(messageText);
-
-    // Do not allow a success-looking message to override an explicit failure result.
-    const verificationSucceeded =
-      (response.status === 200 || response.status === 202) &&
-      !explicitFailureResult &&
-      (explicitSuccessResult || successMessage);
-
-    if (!verificationSucceeded) {
-      console.log('OTP verification was not confirmed.', {
-        authResult,
-        verificationMessage,
-      });
+  // Resend OTP
+  const handleResendOtp = async () => {
+    if (resendAttempts >= MAX_RESEND_ATTEMPTS) {
       setErrorMessage(
-        verificationMessage ||
-          'OTP verification was not confirmed by the server. Please check the response in the console.'
+        'Maximum resend OTP attempts reached please try after some time.'
       );
       return;
     }
 
-    console.log('OTP/mobile verification confirmed. Requesting ABHA suggestions...');
-
-    const suggestionResponse = await ABHA.get('/enrollment/enrol/suggestion', {
-      headers: { txnId: transactionId },
-    });
-
-    const suggestionData = suggestionResponse.data;
-    console.log(
-      'ABHA address suggestion HTTP status:',
-      suggestionResponse.status
-    );
-    console.log(
-      'ABHA address suggestion response:',
-      JSON.stringify(suggestionData, null, 2)
-    );
-
-    // Accommodate common response wrappers while preserving the actual list.
-    const responseBody =
-      suggestionData?.Response ??
-      suggestionData?.response ??
-      suggestionData?.data?.Response ??
-      suggestionData?.data ??
-      suggestionData;
-
-    const possibleLists = [
-      responseBody?.abhaAddressList,
-      responseBody?.suggestions,
-      responseBody?.abhaAddressSuggestions,
-      responseBody?.addressList,
-      responseBody?.abhaAddresses,
-      suggestionData?.abhaAddressList,
-      suggestionData?.suggestions,
-    ];
-
-    const addressList = possibleLists.find(Array.isArray);
-
-    if (!Array.isArray(addressList) || addressList.length === 0) {
-      console.error('Suggestion response did not contain a non-empty address list.');
+    if (!transactionId || !mobile) {
       setErrorMessage(
-        'Mobile verification succeeded, but the suggestion API did not return an address list. Check the console response and its field name.'
+        'Transaction ID or mobile number is missing.'
       );
       return;
     }
 
-    console.log('Navigating to ABHA address suggestions screen...');
-    router.replace({
-      pathname: '/abha/create/address',
-      params: {
-        abha_address: JSON.stringify(addressList.slice(0, 3)),
-        transactionId:
-          responseBody?.txnId ?? responseBody?.transactionId ?? transactionId,
-      },
-    });
-  } catch (error: any) {
-    const errorData = error?.response?.data;
-    console.error(
-      'OTP verification or suggestion request failed:',
-      JSON.stringify(errorData ?? error?.message ?? error, null, 2)
-    );
+    try {
+      setResending(true);
+      setErrorMessage('');
 
-    setErrorMessage(
-      errorData?.Response?.message ||
-        errorData?.response?.message ||
-        errorData?.message ||
+      const response = await ABHA.post(
+        'enrollment/request/updateMobile/otp',
+        {
+          txnId: transactionId,
+          mobile: mobile,
+        }
+      );
+
+      const data = response.data;
+
+      console.log(
+        'Mobile resend response:',
+        data
+      );
+
+      if (
+        response.status === 200 ||
+        response.status === 202
+      ) {
+        const newTxnId =
+          data?.Response?.txnId ??
+          data?.ResponseJSON?.txnId ??
+          data?.txnId;
+
+        if (newTxnId) {
+          setTxnId(String(newTxnId));
+        }
+
+        setTimer(OTP_TIMER);
+
+        setResendAttempts(
+          (previous) => previous + 1
+        );
+
+        setOtp(Array(6).fill(''));
+
+        inputRefs.current[0]?.focus();
+
+        setErrorMessage('');
+      } else {
+        setErrorMessage(
+          data?.Response?.message ||
+          data?.Message ||
+          'Unable to resend OTP. Please try again.'
+        );
+      }
+    } catch (error: any) {
+      const errorData = error?.response?.data;
+
+      console.error(
+        'Resend OTP error:',
+        errorData ?? error?.message
+      );
+
+      setErrorMessage(
+        errorData?.Response?.message ||
         errorData?.Message ||
-        'The request failed. Check the console for the API error.'
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+        'Unable to resend OTP. Please try again.'
+      );
+    } finally {
+      setResending(false);
+    }
+  };
 
+  // Verify OTP
+  const handleVerifyOtp = async () => {
+    if (loading) return;
 
+    setErrorMessage('');
+
+    const enteredOtp = otp.join('');
+
+    if (enteredOtp.length !== 6) {
+      setErrorMessage(
+        'Please enter the complete 6-digit OTP.'
+      );
+      return;
+    }
+
+    if (!transactionId) {
+      setErrorMessage(
+        'Transaction ID is missing. Please request OTP again.'
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await ABHA.post(
+        '/enrollment/auth/byAbdm',
+        {
+          txnId: transactionId,
+          otp: enteredOtp,
+        }
+      );
+
+      const data = response.data;
+
+      console.log(
+        'Mobile OTP verification response:',
+        JSON.stringify(data, null, 2)
+      );
+
+      const authResult =
+        data?.Response?.authResult ??
+        data?.response?.authResult ??
+        data?.authResult;
+
+      const message = String(
+        data?.Response?.message ??
+        data?.Response?.Message ??
+        data?.response?.message ??
+        data?.message ??
+        data?.Message ??
+        ''
+      );
+
+      const resultText = String(
+        authResult ?? ''
+      ).toLowerCase();
+
+      const explicitSuccess = [
+        'success',
+        'successful',
+        'verified',
+      ].includes(resultText);
+
+      const explicitFailure = [
+        'failed',
+        'failure',
+        'error',
+        'invalid',
+      ].includes(resultText);
+
+      const successMessage =
+        /successfully linked|mobile number.*verified|mobile.*successfully.*linked|otp verified successfully/.test(
+          message.toLowerCase()
+        );
+
+      const verificationSucceeded =
+        (
+          response.status === 200 ||
+          response.status === 202
+        ) &&
+        !explicitFailure &&
+        (
+          explicitSuccess ||
+          successMessage
+        );
+
+      if (!verificationSucceeded) {
+        setErrorMessage(
+          message ||
+          'OTP verification failed. Please enter the correct OTP.'
+        );
+        return;
+      }
+
+      // Fetch ABHA address suggestions
+      const suggestionResponse = await ABHA.get(
+        '/enrollment/enrol/suggestion',
+        {
+          headers: {
+            txnId: transactionId,
+          },
+        }
+      );
+
+      const suggestionData =
+        suggestionResponse.data;
+
+      console.log(
+        'ABHA suggestion response:',
+        JSON.stringify(suggestionData, null, 2)
+      );
+
+      const responseBody =
+        suggestionData?.Response ??
+        suggestionData?.response ??
+        suggestionData?.data?.Response ??
+        suggestionData?.data ??
+        suggestionData;
+
+      const possibleLists = [
+        responseBody?.abhaAddressList,
+        responseBody?.suggestions,
+        responseBody?.abhaAddressSuggestions,
+        responseBody?.addressList,
+        responseBody?.abhaAddresses,
+        suggestionData?.abhaAddressList,
+        suggestionData?.suggestions,
+      ];
+
+      const addressList =
+        possibleLists.find(Array.isArray);
+
+      if (
+        !Array.isArray(addressList) ||
+        addressList.length === 0
+      ) {
+        setErrorMessage(
+          'Mobile verified successfully, but ABHA suggestions were not returned.'
+        );
+        return;
+      }
+
+      router.replace({
+        pathname: '/abha/create/address',
+        params: {
+          abha_address: JSON.stringify(
+            addressList.slice(0, 3)
+          ),
+          transactionId:
+            responseBody?.txnId ??
+            responseBody?.transactionId ??
+            transactionId,
+        },
+      });
+    } catch (error: any) {
+      const errorData = error?.response?.data;
+
+      console.error(
+        'Mobile OTP verification error:',
+        errorData ?? error?.message
+      );
+
+      setErrorMessage(
+        errorData?.Response?.message ||
+        errorData?.Message ||
+        errorData?.message ||
+        'Unable to verify OTP. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <ScrollView
@@ -256,7 +423,7 @@ const handleVerifyOtp = async () => {
       </Text>
 
       <Text style={styles.subtitle}>
-        We've sent a 6-digit OTP to
+        We've sent a 6-digit OTP to your mobile number.
       </Text>
 
       <View style={styles.phoneBadge}>
@@ -266,11 +433,12 @@ const handleVerifyOtp = async () => {
           color="#0A5898"
         />
 
-      <Text style={styles.phoneText}>
-        +91 {mobile || 'Mobile number unavailable'}
-      </Text>
+        <Text style={styles.phoneText}>
+          +91 {maskMobileNumber(mobile)}
+        </Text>
       </View>
 
+      {/* OTP boxes */}
       <View style={styles.otpContainer}>
         {otp.map((digit, index) => (
           <TextInput
@@ -283,34 +451,25 @@ const handleVerifyOtp = async () => {
               index === 0 &&
                 !digit &&
                 styles.otpInputActive,
+              errorMessage !== '' &&
+                styles.otpInputError,
             ]}
             value={digit}
             onChangeText={(text) =>
               handleOtpChange(text, index)
             }
-            onKeyPress={(e) =>
-              handleKeyPress(e, index)
+            onKeyPress={(event) =>
+              handleKeyPress(event, index)
             }
             keyboardType="number-pad"
             maxLength={6}
             blurOnSubmit={false}
             editable={!loading}
-            accessibilityLabel={`OTP digit ${index + 1}`}
           />
         ))}
       </View>
 
-      <Text style={styles.resendText}>
-        Resend OTP in{' '}
-        <Text style={styles.boldText}>
-          00:{timer < 10 ? `0${timer}` : timer}
-        </Text>
-      </Text>
-
-      <Text style={styles.attemptText}>
-        Resend attempt 0 of 2
-      </Text>
-
+      {/* Error */}
       {errorMessage !== '' && (
         <View style={styles.errorContainer}>
           <Ionicons
@@ -325,26 +484,53 @@ const handleVerifyOtp = async () => {
         </View>
       )}
 
+      {/* Resend countdown */}
+      <View style={styles.resendContainer}>
+        {timer > 0 ? (
+          <Text style={styles.resendText}>
+            Resend OTP in{' '}
+            <Text style={styles.boldText}>
+              00:{timer < 10 ? `0${timer}` : timer}
+            </Text>
+          </Text>
+        ) : resendAttempts < MAX_RESEND_ATTEMPTS ? (
+          <TouchableOpacity
+            onPress={handleResendOtp}
+            disabled={resending}
+            activeOpacity={0.7}
+          >
+            {resending ? (
+              <ActivityIndicator color="#0A5898" />
+            ) : (
+              <Text style={styles.resendButtonText}>
+                Resend OTP
+              </Text>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.resendDisabledText}>
+            Maximum resend attempts reached
+          </Text>
+        )}
+      </View>
+
+      <Text style={styles.attemptText}>
+        Resend attempt {resendAttempts} of {MAX_RESEND_ATTEMPTS}
+      </Text>
+
+      {/* Verify */}
       <TouchableOpacity
         style={[
           styles.primaryButton,
-          loading && styles.primaryButtonDisabled,
-        ]}
-        onPress={handleVerifyOtp}
-        disabled={loading}
-        activeOpacity={0.8}
+          isVerifyDisabled &&
+            styles.primaryButtonDisabled,
+      ]}
+      onPress={handleVerifyOtp}
+      disabled={isVerifyDisabled}
+      activeOpacity={0.8}
       >
         {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator
-              size="small"
-              color="#FFFFFF"
-            />
-
-            <Text style={styles.primaryButtonText}>
-              Verifying OTP...
-            </Text>
-          </View>
+          <ActivityIndicator color="#FFFFFF" />
         ) : (
           <Text style={styles.primaryButtonText}>
             Verify OTP
@@ -363,7 +549,7 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 20,
     paddingBottom: 40,
-    paddingTop: 20,
+    paddingTop: 24,
     flexGrow: 1,
   },
 
@@ -378,7 +564,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     lineHeight: 20,
-    marginBottom: 16,
+    marginBottom: 24,
   },
 
   phoneBadge: {
@@ -421,23 +607,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
 
-  resendText: {
-    textAlign: 'center',
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-
-  boldText: {
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-
-  attemptText: {
-    textAlign: 'center',
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginBottom: 32,
+  otpInputError: {
+    borderColor: '#DC2626',
   },
 
   errorContainer: {
@@ -459,6 +630,43 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
+  resendContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 24,
+    marginTop: 4,
+  },
+
+  resendText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+
+  resendButtonText: {
+    color: '#0A5898',
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+
+  resendDisabledText: {
+    color: '#9CA3AF',
+    fontSize: 13,
+  },
+
+  boldText: {
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+
+  attemptText: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 8,
+    marginBottom: 32,
+  },
+
   primaryButton: {
     backgroundColor: '#0A5898',
     paddingVertical: 16,
@@ -469,20 +677,13 @@ const styles = StyleSheet.create({
   },
 
   primaryButtonDisabled: {
-    opacity: 0.6,
+    backgroundColor: '#86ACCC',
   },
 
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
   },
 
   footerNote: {
@@ -492,4 +693,3 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
-

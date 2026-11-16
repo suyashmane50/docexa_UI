@@ -2,12 +2,12 @@
 import React, { useState } from 'react';
 
 import {
-  View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  View,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -28,7 +28,9 @@ type OptionCardProps = {
 export default function ConfirmMobileScreen() {
   const router = useRouter();
 
-  const [selected, setSelected] = useState<'yes' | 'no'>('yes');
+  const [selected, setSelected] =
+    useState<'yes' | 'no'>('yes');
+
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -38,19 +40,19 @@ export default function ConfirmMobileScreen() {
   }>();
 
   const handleContinue = async () => {
-  
-    if (loading) {
-      return;
-    }
+    if (loading) return;
 
     setErrorMessage('');
+
+    // Different mobile number
     if (selected === 'no') {
       router.push('/abha/create/mobile-input');
       return;
     }
+
     if (!txnId || !mobile) {
       setErrorMessage(
-        'Transaction ID or mobile number is missing. Please go back and try again.'
+        'Transaction ID or mobile number is missing. Please try again.'
       );
       return;
     }
@@ -58,9 +60,6 @@ export default function ConfirmMobileScreen() {
     setLoading(true);
 
     try {
-      console.log('Requesting OTP...');
-      console.log('Transaction ID:', txnId);
-
       const response = await ABHA.post(
         'enrollment/request/updateMobile/otp',
         {
@@ -69,34 +68,28 @@ export default function ConfirmMobileScreen() {
         }
       );
 
-      console.log('OTP API status:', response.status);
-      console.log('OTP API response:', response.data);
+      console.log(
+        'Confirm mobile OTP response:',
+        response.data
+      );
 
-      if (response.status === 200) {
+      if (
+        response.status === 200 ||
+        response.status === 202
+      ) {
         const data = response.data;
 
-        const message = String(
-          data?.Response?.message ?? ''
-        );
+        const responseTxnId =
+          data?.Response?.txnId ??
+          data?.ResponseJSON?.txnId ??
+          data?.txnId ??
+          txnId;
 
-        console.log('OTP request message:', message);
-        const txnId = String(
-          data?.Response?.txnId ?? ''
-        );
-        console.log('New Transaction ID:', txnId);
-        // Extract the final four digits from the API message.
-        const mobileMatch = message.match(/(\d{4})\s*$/);
-
-        const maskedMobile = mobileMatch
-          ? `******${mobileMatch[1]}`
-          : '******';
-
-        // console.log('Masked mobile number:', maskedMobile);
         router.push({
           pathname: '/abha/create/abha_mobile-otp',
           params: {
-            maskedMobile,
-            transactionId: txnId,
+            mobile: String(mobile),
+            txnId: String(responseTxnId),
           },
         });
 
@@ -104,21 +97,22 @@ export default function ConfirmMobileScreen() {
       }
 
       setErrorMessage(
+        response.data?.Response?.message ||
+        response.data?.Message ||
         'Unable to send OTP. Please try again.'
       );
     } catch (error: any) {
       console.error(
-        'OTP request failed:',
-        error?.response?.data ?? error?.message ?? error
+        'Confirm mobile OTP error:',
+        error?.response?.data ?? error?.message
       );
 
-      const message =
-        error?.response?.data?.message ??
-        error?.response?.data?.Response?.message ??
-        error?.message ??
-        'An unexpected error occurred. Please try again.';
-
-      setErrorMessage(String(message));
+      setErrorMessage(
+        error?.response?.data?.Response?.message ||
+        error?.response?.data?.Message ||
+        error?.response?.data?.message ||
+        'Unable to send OTP. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -182,8 +176,8 @@ export default function ConfirmMobileScreen() {
       </Text>
 
       <Text style={styles.subtitle}>
-        Is your communication mobile number the same as your
-        Aadhaar-linked mobile number?
+        Is your communication mobile number the same as
+        your Aadhaar-linked mobile number?
       </Text>
 
       <View style={styles.optionsContainer}>
@@ -358,4 +352,3 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 });
-

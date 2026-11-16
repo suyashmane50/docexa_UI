@@ -17,10 +17,14 @@ import { useAbhaStore } from '../../abha/stores/abhaStore';
 export default function MobileInputScreen() {
   const router = useRouter();
 
-  // Get the transaction ID from Zustand.
-  const txnId = useAbhaStore((state) => state.txnId);
+  const txnId = useAbhaStore(
+    (state) => state.txnId
+  );
 
-  // Store the entered mobile number.
+  const setTxnId = useAbhaStore(
+    (state) => state.setTxnId
+  );
+
   const [mobile, setMobile] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,63 +32,78 @@ export default function MobileInputScreen() {
   const handleSendOtp = async () => {
     setErrorMessage('');
 
-    // Validate mobile number.
     if (!/^[6-9]\d{9}$/.test(mobile)) {
-      setErrorMessage('Please enter a valid 10-digit mobile number.');
+      setErrorMessage(
+        'Please enter a valid 10-digit mobile number.'
+      );
       return;
     }
 
-    // Ensure transaction ID exists.
     if (!txnId) {
       setErrorMessage(
-        'Transaction ID is missing. Please restart the enrollment process.'
+        'Transaction ID is missing. Please restart enrollment.'
       );
-      console.log('Transaction ID is missing from Zustand.');
       return;
     }
 
     setLoading(true);
 
     try {
-      console.log('Transaction ID:', txnId);
-      console.log('Mobile number:', mobile);
-
-      // Request OTP using transaction ID and mobile number.
       const response = await ABHA.post(
         'enrollment/request/updateMobile/otp',
         {
-          txnId: txnId,
-          mobile: mobile,
+          txnId,
+          mobile,
         }
       );
 
-      console.log('Update mobile OTP response:', response.data);
+      console.log(
+        'Mobile input OTP response:',
+        response.data
+      );
 
-      // Navigate only after a successful API response.
-      if (response.status === 200 || response.status === 202) {
+      if (
+        response.status === 200 ||
+        response.status === 202
+      ) {
+        const data = response.data;
+
+        const responseTxnId =
+          data?.Response?.txnId ??
+          data?.ResponseJSON?.txnId ??
+          data?.txnId ??
+          txnId;
+
+        // Update Zustand if API returns a new transaction ID
+        setTxnId(String(responseTxnId));
+
         router.push({
           pathname: '/abha/create/abha_mobile-otp',
           params: {
             mobile: mobile,
+            txnId: String(responseTxnId),
           },
         });
-      } else {
-        setErrorMessage(
-          response.data?.message ||
-            response.data?.Message ||
-            'Unable to send OTP. Please try again.'
-        );
+
+        return;
       }
+
+      setErrorMessage(
+        response.data?.Response?.message ||
+        response.data?.Message ||
+        'Unable to send OTP. Please try again.'
+      );
     } catch (error: any) {
-      console.log(
-        'Request mobile OTP error:',
-        error?.response?.data || error?.message
+      console.error(
+        'Mobile input OTP error:',
+        error?.response?.data ?? error?.message
       );
 
       setErrorMessage(
+        error?.response?.data?.Response?.message ||
+        error?.response?.data?.Message ||
         error?.response?.data?.message ||
-          error?.response?.data?.Message ||
-          'Unable to send OTP. Please try again.'
+        'Unable to send OTP. Please try again.'
       );
     } finally {
       setLoading(false);
@@ -93,13 +112,18 @@ export default function MobileInputScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Enter your mobile number</Text>
-
-      <Text style={styles.subtitle}>
-        Enter the mobile number registered with your ABHA.
+      <Text style={styles.title}>
+        Enter your mobile number
       </Text>
 
-      <Text style={styles.label}>Mobile number</Text>
+      <Text style={styles.subtitle}>
+        Enter the mobile number you want to register
+        for ABHA communication.
+      </Text>
+
+      <Text style={styles.label}>
+        Mobile number
+      </Text>
 
       <View
         style={[
@@ -107,7 +131,9 @@ export default function MobileInputScreen() {
           errorMessage !== '' && styles.inputError,
         ]}
       >
-        <Text style={styles.countryCode}>+91</Text>
+        <Text style={styles.countryCode}>
+          +91
+        </Text>
 
         <View style={styles.divider} />
 
@@ -119,7 +145,9 @@ export default function MobileInputScreen() {
           maxLength={10}
           value={mobile}
           onChangeText={(text) => {
-            setMobile(text.replace(/\D/g, '').slice(0, 10));
+            setMobile(
+              text.replace(/\D/g, '').slice(0, 10)
+            );
             setErrorMessage('');
           }}
           editable={!loading}
@@ -127,7 +155,9 @@ export default function MobileInputScreen() {
       </View>
 
       {errorMessage !== '' && (
-        <Text style={styles.errorText}>{errorMessage}</Text>
+        <Text style={styles.errorText}>
+          {errorMessage}
+        </Text>
       )}
 
       <TouchableOpacity
@@ -142,7 +172,9 @@ export default function MobileInputScreen() {
         {loading ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Text style={styles.primaryButtonText}>Send OTP</Text>
+          <Text style={styles.primaryButtonText}>
+            Send OTP
+          </Text>
         )}
       </TouchableOpacity>
     </View>
@@ -237,4 +269,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

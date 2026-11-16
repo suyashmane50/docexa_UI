@@ -61,6 +61,40 @@ const Icon = ({ name, size = 24, color = '#000' }: IconProps) => {
       return <Svg {...props}><Path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><Polyline points="9 22 9 12 15 12 15 22" /></Svg>;
     case 'arrowLeft':
       return <Svg {...props}><Line x1="19" y1="12" x2="5" y2="12" /><Polyline points="12 19 5 12 12 5" /></Svg>;
+    case 'abha':
+  return (
+    <Svg {...props} viewBox="0 0 24 24">
+      {/* Outer circle */}
+      <Circle
+        cx="12"
+        cy="12"
+        r="10"
+        strokeWidth="1.8"
+      />
+
+      {/* ABHA stylized A */}
+      <Path
+        d="M5.5 17.5L12 4.5L18.5 17.5"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Medical card */}
+      <Path
+        d="M8 9H16V14H8Z"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+
+      {/* Medical plus */}
+      <Path
+        d="M12 10.5V12.5M11 11.5H13"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
     default:
       return null;
   }

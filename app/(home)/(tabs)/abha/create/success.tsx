@@ -102,6 +102,17 @@ export default function SuccessScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Header with Back Button */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-back" size={24} color="#1F2937" />
+        </TouchableOpacity>
+      </View>
+
       {/* Success Icon */}
       <View style={styles.iconContainer}>
         <View style={styles.iconCircle}>
@@ -195,10 +206,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingTop: 20, // Reduced slightly to fit the header
     paddingBottom: 40,
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
+  },
+
+  headerContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+
+  backButton: {
+    padding: 8,
+    marginLeft: -8, // Pulls icon to align with the left edge of the screen
   },
 
   iconContainer: {
@@ -329,4 +352,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

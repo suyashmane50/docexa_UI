@@ -76,14 +76,14 @@ export default function TabLayout() {
           }}
         />
 
-        <Tabs.Screen
+       <Tabs.Screen
           name="abha"
           options={{
             title: "ABHA",
             tabBarIcon: ({ color }) => (
               <Icon
+                source="abha"
                 size={22}
-                source={require("../../../assets/icons/abha_logo1.webp")}
                 color={color}
               />
             ),
