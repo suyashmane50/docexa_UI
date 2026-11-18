@@ -156,8 +156,10 @@ export default function OtpScreen() {
 
       if (isOtpVerifiedSuccessfully) {
         console.log('Mobile number OTP verified successfully. Navigating to ABHA profile.');
-        setSuccessMessage(message);
-        router.replace('/(home)/(tabs)/abha/abha_profile');
+        router.replace({
+          pathname: '/(home)/(tabs)/abha/abha_profile',
+          params: { contactUpdated: 'mobile' },
+        });
       } else {
         setErrorMessage(
           message || 'OTP verification failed. Please try again.'

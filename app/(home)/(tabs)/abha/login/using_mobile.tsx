@@ -1,26 +1,25 @@
 import React, { useState } from 'react';
-import {ABHA} from '@/utils/api';
+import { ABHA } from '@/utils/api';
 import { useRouter } from 'expo-router';
 import { useAbhaStore } from '../../abha/stores/abhaStore';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, SafeAreaView,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator
 } from 'react-native';
-import { Feather } from '@expo/vector-icons'; 
-
+import { Feather, Ionicons } from '@expo/vector-icons'; 
 
 export default function MobileLoginScreen() {
   const router = useRouter();
   const [mobileNumber, setMobileNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-   const setTxnId = useAbhaStore((state: any) => state.setTxnId);
-const [message, setMessage] = useState('');
-const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
-  // Unique Theme for Mobile - Changed to Green
+  const setTxnId = useAbhaStore((state: any) => state.setTxnId);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
+  
   const theme = {
-    accent: '#059669', // Green
-    lightBg: '#ECFDF5', // Very light green
+    accent: '#059669',
+    lightBg: '#ECFDF5',
   };
 
   const handleMobileChange = (text: string) => {
@@ -28,56 +27,27 @@ const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
     setMobileNumber(cleaned);
   };
 
-const handleclick = async () => {
-  if (mobileNumber.length !== 10 || isLoading) return;
-
-  setIsLoading(true);
-
-  try {
-    const payload = { 'mobile-number': mobileNumber, }; 
-    const response = await ABHA.post(
-      'verify/abha/mobile-number/request/otp',
-        payload 
-      );
+  const handleclick = async () => {
+    if (mobileNumber.length !== 10 || isLoading) return;
+    setIsLoading(true);
+    try {
+      const payload = { 'mobile-number': mobileNumber, }; 
+      const response = await ABHA.post('verify/abha/mobile-number/request/otp', payload);
       const txnId = response.data?.Response?.txnId;
       if (txnId) setTxnId(txnId);
-    console.log('Transaction ID:', txnId);
-    console.log('MOBILE OTP RESPONSE:', response.data);
-    console.log('HTTP STATUS:', response.status);
-
-    if (response.status === 200 || response.status === 202) {
-      if (!txnId) {
-        console.log('Transaction ID missing');
-        return;
+      if (response.status === 200 || response.status === 202) {
+        if (!txnId) return;
+        router.push({
+          pathname: '/abha/login/mobileOTP',
+          params: { txnId: txnId, mobile: mobileNumber },
+        });
       }
-
-      // Navigate to mobile OTP screen
-      router.push({
-        pathname: '/abha/login/mobileOTP',
-        params: {
-          txnId: txnId,
-          mobile: mobileNumber,
-        },
-      });
-    } else {
-      console.log('Unable to send OTP');
+    } catch (error: any) {
+      console.log('MOBILE OTP ERROR:', error);
+    } finally {
+      setIsLoading(false);
     }
-  } catch (error: any) {
-    console.log('MOBILE OTP ERROR:', error);
-    console.log('ERROR RESPONSE:', error.response?.data);
-
-    const status = error.response?.status;
-
-    if (status === 429) {
-      console.log('Too many OTP requests');
-    } else {
-      console.log('Failed to send OTP');
-    }
-  } finally {
-    setIsLoading(false);
-  }
-};
-
+  };
 
   const isButtonDisabled = mobileNumber.length < 10 || isLoading;
 
@@ -85,15 +55,15 @@ const handleclick = async () => {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoidingView}>
         
+        {/* UPDATED HEADER WITH IONICONS */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>‹</Text>
+            <Ionicons name="chevron-back" size={24} color="#1F2937" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Login with ABHA</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          
           <Text style={styles.title}>Enter your mobile number</Text>
           <Text style={styles.subtitle}>Enter the mobile number registered with your ABHA.</Text>
 
@@ -107,7 +77,6 @@ const handleclick = async () => {
             <View style={styles.inputContent}>
               <Text style={styles.floatingLabel}>Mobile number</Text>
               <View style={styles.inputRow}>
-                {/* +91 Block */}
                 <View style={styles.countryCodeBox}>
                   <Text style={styles.prefix}>+91</Text>
                   <Feather name="chevron-down" size={12} color="#6B7280" />
@@ -139,25 +108,19 @@ const handleclick = async () => {
             <Text style={styles.infoText}>We will send a One Time Password to this mobile number.</Text>
           </View>
 
-          {/* UPDATED: Primary Button now uses theme.accent (Green) */}
           <TouchableOpacity 
-            style={[
-              styles.button, 
-              { backgroundColor: theme.accent }, // Applied Green theme color
-              isButtonDisabled && styles.buttonDisabled
-            ]} 
+            style={[styles.button, { backgroundColor: theme.accent }, isButtonDisabled && styles.buttonDisabled]} 
             activeOpacity={0.8} 
             onPress={handleclick} 
             disabled={isButtonDisabled}
           >
-            {isLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : 
-              <Text style={styles.buttonText}>Send OTP</Text>}
+            {isLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.buttonText}>Send OTP</Text>}
           </TouchableOpacity>
+          
           <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} /><Text style={styles.dividerText}>OR</Text><View style={styles.dividerLine} />
           </View>
           
-          {/* UPDATED: Outline Button matches the Green theme */}
           <TouchableOpacity 
             style={[styles.outlineButton, { borderColor: theme.accent }]} 
             activeOpacity={0.8} 
@@ -179,11 +142,25 @@ const handleclick = async () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   keyboardAvoidingView: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 20 : 10, paddingBottom: 15 },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E8F1FA', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  backIcon: { fontSize: 28, color: '#0A58CA', fontWeight: '300', marginTop: -4 },
+  
+  // UPDATED STYLES
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 20 : 10,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  backButton: {
+    padding: 4,
+    marginRight: 12,
+    marginLeft: -4,
+  },
   headerTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
-  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 10 },
+
+  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20 },
   title: { fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#6B7280', marginBottom: 25, lineHeight: 20 },
   inputLabelAbove: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
@@ -204,8 +181,6 @@ const styles = StyleSheet.create({
   button: { borderRadius: 10, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', minHeight: 54 },
   buttonDisabled: { backgroundColor: '#9CA3AF' },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  switchMethodContainer: { alignItems: 'center', marginTop: 15 },
-  switchMethodText: { fontSize: 14, fontWeight: '500' },
   dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 25 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
   dividerText: { marginHorizontal: 15, color: '#9CA3AF', fontSize: 12, fontWeight: '500' },

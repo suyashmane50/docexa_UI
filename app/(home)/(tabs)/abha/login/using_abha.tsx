@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import {ABHA} from '../../../../../utils/api' ;
+import { ABHA } from '../../../../../utils/api';
 import { useRouter } from 'expo-router';
 import { useAbhaStore } from '../../abha/stores/abhaStore';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, SafeAreaView,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator
 } from 'react-native';
-import { Feather } from '@expo/vector-icons'; 
+import { Feather, Ionicons } from '@expo/vector-icons'; 
 
 export default function AbhaNumberLoginScreen() {
   const router = useRouter();
@@ -14,12 +14,11 @@ export default function AbhaNumberLoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [message, setMessage] = useState('');
-const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
+  const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
   const setTxnId = useAbhaStore((state: any) => state.setTxnId);
 
-  // Unique Theme for ABHA
   const theme = {
-    accent: '#6D28D9', // Purple
+    accent: '#6D28D9',
     lightBg: '#F5F3FF',
   };
 
@@ -32,84 +31,47 @@ const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
     setAbhaNumber(formatted);
   };
 
-const handleclick = async () => {
-  if (isLoading) return;
+  const handleclick = async () => {
+    if (isLoading) return;
+    const rawNumber = abhaNumber;
+    setMessage('');
+    setMessageType('');
 
-  const rawNumber = abhaNumber;
-
-  setMessage('');
-  setMessageType('');
-
-  if (rawNumber.replace(/-/g, '').length !== 14) {
-    setMessage('Please enter a valid 14-digit ABHA number.');
-    setMessageType('error');
-    return;
-  }
-
-  setIsLoading(true);
-
-  try {
-    const response = await ABHA.post(
-      'verify/abha/abha-number/request/otp',
-      {
-        'abha-number': rawNumber,
-      }
-    );
-    console.log('ABHA NUMBER LOGIN RESPONSE:', response.data);
-    console.log('HTTP STATUS:', response.status);
-    const txnId = response.data?.Response?.txnId;
-      if (txnId) setTxnId(txnId);
-    console.log('TXN ID:', txnId);
-    if (response.status === 200 || response.status === 202) {
-      setMessage(
-        response.data?.Response?.message ||
-        'OTP sent successfully to your ABHA registered mobile.'
-      );
-
-      setMessageType('success');
-
-      setTimeout(() => {
-        router.push({
-          pathname: '/abha/login/abhaOTP',
-          params: {
-            txnId: response.data?.Response?.txnId,
-            abhaNumber: rawNumber,
-          },
-        });
-      }, 1000);
-    } else {
-      setMessage('Unable to send OTP. Please try again.');
+    if (rawNumber.replace(/-/g, '').length !== 14) {
+      setMessage('Please enter a valid 14-digit ABHA number.');
       setMessageType('error');
+      return;
     }
 
-} catch (error: any) {
-  const status = error.response?.status;
-  const backendMessage =
-    error.response?.data?.Response?.message ||
-    error.response?.data?.message;
+    setIsLoading(true);
+    try {
+      const response = await ABHA.post('verify/abha/abha-number/request/otp', { 'abha-number': rawNumber });
+      const txnId = response.data?.Response?.txnId;
+      if (txnId) setTxnId(txnId);
 
-  if (status === 429) {
-    setMessage(
-      backendMessage ||
-      'Too many OTP requests. Please wait for some time before requesting another OTP.'
-    );
-  } else {
-    setMessage(
-      backendMessage ||
-      'Unable to send OTP. Please try again later.'
-    );
-  }
+      if (response.status === 200 || response.status === 202) {
+        setMessage(response.data?.Response?.message || 'OTP sent successfully to your ABHA registered mobile.');
+        setMessageType('success');
 
-  setMessageType('error');
-
-  console.log('HTTP STATUS:', status);
-  console.log('ERROR RESPONSE:', error.response?.data);
-} finally {
-  setIsLoading(false);
-}
-
-
-};
+        setTimeout(() => {
+          router.push({
+            pathname: '/abha/login/abhaOTP',
+            params: { txnId: response.data?.Response?.txnId, abhaNumber: rawNumber },
+          });
+        }, 1000);
+      } else {
+        setMessage('Unable to send OTP. Please try again.');
+        setMessageType('error');
+      }
+    } catch (error: any) {
+      const status = error.response?.status;
+      const backendMessage = error.response?.data?.Response?.message || error.response?.data?.message;
+      setMessage(backendMessage || (status === 429 ? 'Too many OTP requests. Please wait for some time.' : 'Unable to send OTP. Please try again later.'));
+      setMessageType('error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const isButtonDisabled = abhaNumber.replace(/-/g, '').length !== 14 || isLoading;
 
@@ -117,15 +79,15 @@ const handleclick = async () => {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoidingView}>
         
+        {/* UPDATED HEADER WITH IONICONS */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>‹</Text>
+            <Ionicons name="chevron-back" size={24} color="#1F2937" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Login with ABHA</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          
           <Text style={styles.title}>Enter your ABHA number</Text>
           <Text style={styles.subtitle}>Enter your 14-digit ABHA number to verify your identity and login.</Text>
 
@@ -154,7 +116,6 @@ const handleclick = async () => {
                 />
               </View>
             </View>
-
             <Feather name="shield" size={20} color={theme.accent} style={styles.rightIcon} />
           </View>
 
@@ -168,24 +129,19 @@ const handleclick = async () => {
             <Text style={styles.infoText}>Your ABHA number is a unique identifier for your health records. Avoid sharing it unnecessarily.</Text>
           </View>
 
-          {/* UPDATED: Primary Button now uses theme.accent color */}
           <TouchableOpacity 
-            style={[
-              styles.button, 
-              { backgroundColor: theme.accent }, // Applied Purple theme color
-              isButtonDisabled && styles.buttonDisabled
-            ]} 
+            style={[styles.button, { backgroundColor: theme.accent }, isButtonDisabled && styles.buttonDisabled]} 
             activeOpacity={0.8} 
             onPress={handleclick} 
             disabled={isButtonDisabled}
           >
             {isLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.buttonText}>Send OTP</Text>}
           </TouchableOpacity>
+          
           <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} /><Text style={styles.dividerText}>OR</Text><View style={styles.dividerLine} />
           </View>
           
-          {/* UPDATED: Outline Button now uses theme.accent color */}
           <TouchableOpacity 
             style={[styles.outlineButton, { borderColor: theme.accent }]} 
             activeOpacity={0.8} 
@@ -207,11 +163,25 @@ const handleclick = async () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   keyboardAvoidingView: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 20 : 10, paddingBottom: 15 },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E8F1FA', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  backIcon: { fontSize: 28, color: '#0A58CA', fontWeight: '300', marginTop: -4 },
+  
+  // UPDATED STYLES
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 20 : 10,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  backButton: {
+    padding: 4,
+    marginRight: 12,
+    marginLeft: -4,
+  },
   headerTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
-  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 10 },
+
+  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20 },
   title: { fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#6B7280', marginBottom: 25, lineHeight: 20 },
   inputLabelAbove: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },
@@ -228,10 +198,8 @@ const styles = StyleSheet.create({
   infoIcon: { marginTop: 2, marginRight: 10 },
   infoText: { flex: 1, fontSize: 13, color: '#4B5563', lineHeight: 18 },
   button: { borderRadius: 10, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', minHeight: 54 },
-  buttonDisabled: { backgroundColor: '#9CA3AF' }, // Overrides theme color when disabled
+  buttonDisabled: { backgroundColor: '#9CA3AF' },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  switchMethodContainer: { alignItems: 'center', marginTop: 15 },
-  switchMethodText: { fontSize: 14, fontWeight: '500' },
   dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 25 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
   dividerText: { marginHorizontal: 15, color: '#9CA3AF', fontSize: 12, fontWeight: '500' },

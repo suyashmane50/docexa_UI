@@ -84,12 +84,9 @@ export default function RootLayout() {
           await Updates.reloadAsync();
         }
       } catch (error) {
-        // You can also add an alert() to see the error message in case of an error when fetching updates.
         console.log(`Error fetching update: ${error}`);
       }
     }
-
-    // Only check for updates in production builds
     if (!__DEV__ && Updates.isEnabled) {
       onFetchUpdateAsync();
     }

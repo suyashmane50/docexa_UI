@@ -264,13 +264,19 @@ export default function EmailOtpScreen() {
         responseData?.Message ??
         '';
 
+      const httpStatus = Number(response?.status);
+      const hasValidHttpStatus =
+        httpStatus >= 200 && httpStatus < 300;
+
+      const hasValidBackendStatus =
+        !Number.isFinite(backendStatus) ||
+        (backendStatus >= 200 && backendStatus < 300);
+
       const isSuccessful =
-        response?.status >= 200 &&
-        response?.status < 300 &&
-        backendStatus >= 200 &&
-        backendStatus < 300 &&
+        hasValidHttpStatus &&
+        hasValidBackendStatus &&
         successFlag !== false &&
-        !/invalid|incorrect|failed|failure/i.test(
+        !/invalid|incorrect|wrong|failed|failure|not verified/i.test(
           String(responseMessage)
         );
 
@@ -285,10 +291,11 @@ export default function EmailOtpScreen() {
 
       console.log('Email OTP verified successfully.');
 
-      // Navigate to ABHA Profile after successful verification.
-      router.replace(
-        '/(home)/(tabs)/abha/abha_profile'
-      );
+      // Navigate to ABHA Profile and show the email-updated confirmation there.
+      router.replace({
+        pathname: '/(home)/(tabs)/abha/abha_profile',
+        params: { contactUpdated: 'email' },
+      });
 
     } catch (error: any) {
       const errorData = error?.response?.data;

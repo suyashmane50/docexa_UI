@@ -30,33 +30,62 @@ const MAX_RESEND_ATTEMPTS = 2;
 export default function AadhaarOtpScreen() {
   const router = useRouter();
 
-  // Zustand
-  const txnId = useAbhaStore((state) => state.txnId);
-  const aadhaar = useAbhaStore((state) => state.aadhaar);
-  const setTxnId = useAbhaStore((state) => state.setTxnId);
-  const setToken = useAbhaStore((state) => state.setToken);
+  // =====================================================
+  // ZUSTAND STORE
+  // =====================================================
 
-  // Route parameters
+  const txnId = useAbhaStore(
+    (state) => state.txnId
+  );
+
+  const aadhaar = useAbhaStore(
+    (state) => state.aadhaar
+  );
+
+  const setTxnId = useAbhaStore(
+    (state) => state.setTxnId
+  );
+
+  const setToken = useAbhaStore(
+    (state) => state.setToken
+  );
+
+  // =====================================================
+  // ROUTE PARAMETERS
+  // =====================================================
+
   const { mobile } = useLocalSearchParams<{
     mobile?: string;
   }>();
 
-  // OTP state
+  // =====================================================
+  // OTP STATE
+  // =====================================================
+
   const [otp, setOtp] = useState<string[]>(
     Array(6).fill('')
   );
 
   const [timer, setTimer] = useState(OTP_TIMER);
-  const [resendAttempts, setResendAttempts] = useState(0);
 
-  const [verifying, setVerifying] = useState(false);
-  const [resending, setResending] = useState(false);
+  const [resendAttempts, setResendAttempts] =
+    useState(0);
 
-  const [errorMessage, setErrorMessage] = useState('');
+  const [verifying, setVerifying] =
+    useState(false);
+
+  const [resending, setResending] =
+    useState(false);
+
+  const [errorMessage, setErrorMessage] =
+    useState('');
 
   const inputRefs = useRef<Array<TextInput | null>>([]);
 
-  // Enable verify when all 6 digits are entered.
+  // =====================================================
+  // OTP VALIDATION
+  // =====================================================
+
   const isOtpComplete = otp.every(
     (digit) => digit !== ''
   );
@@ -64,7 +93,10 @@ export default function AadhaarOtpScreen() {
   const isVerifyDisabled =
     !isOtpComplete || verifying;
 
-  // Countdown timer
+  // =====================================================
+  // COUNTDOWN TIMER
+  // =====================================================
+
   useEffect(() => {
     if (timer <= 0) {
       return;
@@ -79,7 +111,10 @@ export default function AadhaarOtpScreen() {
     return () => clearInterval(interval);
   }, [timer]);
 
-  // Handle OTP input and paste
+  // =====================================================
+  // HANDLE OTP INPUT
+  // =====================================================
+
   const handleOtpChange = (
     text: string,
     index: number
@@ -92,7 +127,9 @@ export default function AadhaarOtpScreen() {
 
     // Handle pasted OTP
     if (text.length > 1) {
-      const digits = text.replace(/\D/g, '').slice(0, 6);
+      const digits = text
+        .replace(/\D/g, '')
+        .slice(0, 6);
 
       const newOtp = Array(6)
         .fill('')
@@ -100,7 +137,10 @@ export default function AadhaarOtpScreen() {
 
       setOtp(newOtp);
 
-      const nextIndex = Math.min(digits.length, 5);
+      const nextIndex = Math.min(
+        digits.length,
+        5
+      );
 
       inputRefs.current[nextIndex]?.focus();
 
@@ -119,7 +159,10 @@ export default function AadhaarOtpScreen() {
     }
   };
 
-  // Handle backspace
+  // =====================================================
+  // HANDLE BACKSPACE
+  // =====================================================
+
   const handleKeyPress = (
     event: any,
     index: number
@@ -133,11 +176,14 @@ export default function AadhaarOtpScreen() {
     }
   };
 
+  // =====================================================
   // RESEND OTP
+  // =====================================================
+
   const handleResendOtp = async () => {
     if (resendAttempts >= MAX_RESEND_ATTEMPTS) {
       setErrorMessage(
-        'Maximum resend OTP attempts reached please try after some time.'
+        'Maximum resend OTP attempts reached. Please try after some time.'
       );
       return;
     }
@@ -162,7 +208,10 @@ export default function AadhaarOtpScreen() {
 
       const data = response.data;
 
-      console.log('Resend OTP response:', data);
+      console.log(
+        'Resend OTP response:',
+        data
+      );
 
       if (
         data?.status === 200 &&
@@ -172,9 +221,11 @@ export default function AadhaarOtpScreen() {
         setTxnId(data.ResponseJSON.txnId);
 
         // Increment resend attempts
-        setResendAttempts((previous) => previous + 1);
+        setResendAttempts(
+          (previous: number) => previous + 1
+        );
 
-        // Restart 30-second timer
+        // Restart timer
         setTimer(OTP_TIMER);
 
         // Clear previous OTP
@@ -186,6 +237,8 @@ export default function AadhaarOtpScreen() {
         setErrorMessage('');
       } else {
         setErrorMessage(
+          data?.Response?.message ||
+          data?.ResponseJSON?.message ||
           data?.Message ||
           data?.message ||
           'Unable to resend OTP. Please try again.'
@@ -200,6 +253,8 @@ export default function AadhaarOtpScreen() {
       );
 
       setErrorMessage(
+        errorData?.Response?.error?.message ||
+        errorData?.Response?.message ||
         errorData?.Message ||
         errorData?.message ||
         'Unable to resend OTP. Please try again.'
@@ -209,7 +264,10 @@ export default function AadhaarOtpScreen() {
     }
   };
 
+  // =====================================================
   // VERIFY OTP
+  // =====================================================
+
   const handleVerifyOtp = async () => {
     const enteredOtp = otp.join('');
 
@@ -238,7 +296,7 @@ export default function AadhaarOtpScreen() {
           txnId: txnId,
           otp: enteredOtp,
 
-          // Your existing mobile value
+          // Existing mobile value
           mobile: '8262943747',
         }
       );
@@ -250,6 +308,10 @@ export default function AadhaarOtpScreen() {
         data
       );
 
+      // =================================================
+      // EXTRACT RESPONSE DATA
+      // =================================================
+
       const responseMobile =
         data?.Response?.ABHAProfile?.mobile;
 
@@ -259,32 +321,84 @@ export default function AadhaarOtpScreen() {
       const token =
         data?.Response?.tokens?.token;
 
-      // Save token in Zustand
+      // =================================================
+      // SAVE TOKEN
+      // =================================================
+
       if (token) {
         setToken(token);
       }
 
-      // Successful verification
+      // =================================================
+      // SUCCESSFUL OTP VERIFICATION
+      // =================================================
+
       if (data?.Status === 200) {
-        if (
-          !txnIdFromResponse ||
-          !responseMobile
-        ) {
+        // Validate transaction ID
+        if (!txnIdFromResponse) {
           setErrorMessage(
-            'Mobile number or transaction ID is missing from the response.'
+            'Transaction ID is missing from the response.'
           );
           return;
         }
 
-        router.replace({
-          pathname:
-            '/(home)/(tabs)/abha/create/confirm-mobile',
-          params: {
-            txnId: String(txnIdFromResponse),
-            mobile: String(responseMobile),
-          },
-        });
+        // Save updated transaction ID
+        setTxnId(String(txnIdFromResponse));
+
+        // =================================================
+        // CHECK WHETHER MOBILE NUMBER EXISTS
+        // =================================================
+
+        const hasMobile =
+          responseMobile !== null &&
+          responseMobile !== undefined &&
+          String(responseMobile).trim() !== '';
+
+        console.log(
+          'ABHA mobile number:',
+          responseMobile
+        );
+
+        console.log(
+          'Mobile number exists:',
+          hasMobile
+        );
+
+        // =================================================
+        // MOBILE NUMBER EXISTS
+        // → CONFIRM MOBILE SCREEN
+        // =================================================
+
+        if (hasMobile) {
+          router.replace({
+            pathname:
+              '/(home)/(tabs)/abha/create/confirm-mobile',
+            params: {
+              txnId: String(txnIdFromResponse),
+              mobile: String(responseMobile),
+            },
+          });
+        }
+
+        // =================================================
+        // MOBILE NUMBER MISSING
+        // → MOBILE INPUT SCREEN
+        // =================================================
+
+        else {
+          router.replace({
+            pathname:
+              '/(home)/(tabs)/abha/create/mobile-input',
+            params: {
+              txnId: String(txnIdFromResponse),
+            },
+          });
+        }
       } else {
+        // =================================================
+        // OTP VERIFICATION FAILED
+        // =================================================
+
         const message =
           data?.Response?.error?.message ||
           data?.Message ||
@@ -315,6 +429,7 @@ export default function AadhaarOtpScreen() {
       } else {
         const message =
           errorData?.Response?.error?.message ||
+          errorData?.Response?.message ||
           errorData?.Message ||
           errorData?.message ||
           'Unable to verify OTP. Please try again.';
@@ -326,12 +441,18 @@ export default function AadhaarOtpScreen() {
     }
   };
 
+  // =====================================================
+  // UI
+  // =====================================================
+
   return (
     <ScrollView
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
+      {/* TITLE */}
+
       <Text style={styles.title}>
         Enter verification code
       </Text>
@@ -341,7 +462,8 @@ export default function AadhaarOtpScreen() {
         mobile number.
       </Text>
 
-      {/* Masked mobile number */}
+      {/* MOBILE NUMBER */}
+
       <View style={styles.phoneBadge}>
         <Ionicons
           name="phone-portrait-outline"
@@ -354,9 +476,10 @@ export default function AadhaarOtpScreen() {
         </Text>
       </View>
 
-      {/* OTP inputs */}
+      {/* OTP INPUTS */}
+
       <View style={styles.otpContainer}>
-        {otp.map((digit, index) => (
+        {otp.map((digit: string, index: number) => (
           <TextInput
             key={index}
             ref={(ref) => {
@@ -385,7 +508,8 @@ export default function AadhaarOtpScreen() {
         ))}
       </View>
 
-      {/* Error message */}
+      {/* ERROR MESSAGE */}
+
       {errorMessage !== '' && (
         <View
           style={styles.errorContainer}
@@ -403,7 +527,8 @@ export default function AadhaarOtpScreen() {
         </View>
       )}
 
-      {/* Countdown and resend */}
+      {/* COUNTDOWN AND RESEND */}
+
       <View style={styles.resendContainer}>
         {timer > 0 ? (
           <Text style={styles.resendText}>
@@ -433,17 +558,21 @@ export default function AadhaarOtpScreen() {
         )}
       </View>
 
+      {/* RESEND ATTEMPT COUNTER */}
+
       <Text style={styles.attemptText}>
-        Resend attempt {resendAttempts} of {MAX_RESEND_ATTEMPTS}
+        Resend attempt {resendAttempts} of{' '}
+        {MAX_RESEND_ATTEMPTS}
       </Text>
 
-      {/* Verify OTP button */}
+      {/* VERIFY OTP BUTTON */}
+
       <TouchableOpacity
         style={[
           styles.primaryButton,
           isVerifyDisabled &&
             styles.primaryButtonDisabled,
-      ]}
+        ]}
         onPress={handleVerifyOtp}
         disabled={isVerifyDisabled}
         activeOpacity={0.8}
@@ -457,6 +586,8 @@ export default function AadhaarOtpScreen() {
         )}
       </TouchableOpacity>
 
+      {/* FOOTER */}
+
       <Text style={styles.footerNote}>
         Enter the OTP sent to your Aadhaar-linked mobile
         number.
@@ -464,6 +595,10 @@ export default function AadhaarOtpScreen() {
     </ScrollView>
   );
 }
+
+// =====================================================
+// STYLES
+// =====================================================
 
 const styles = StyleSheet.create({
   container: {
@@ -530,7 +665,7 @@ const styles = StyleSheet.create({
 
   errorContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: '#FEF2F2',
     borderColor: '#FECACA',
     borderWidth: 1,

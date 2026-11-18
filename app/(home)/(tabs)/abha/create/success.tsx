@@ -34,10 +34,13 @@ export default function SuccessScreen() {
     abha_address?: string;
   }>();
 
-  // Get the authentication token from your Zustand store.
+  // Get the authentication token and store setters from Zustand.
   const token = useAbhaStore((state) => state.token);
+  const setProfileData = useAbhaStore((state) => state.setProfileData);
+  const setData = useAbhaStore((state) => state.setData);
 
   const [loadingCard, setLoadingCard] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   console.log('ABHA Number:', ABHANumber);
@@ -97,6 +100,58 @@ export default function SuccessScreen() {
       );
     } finally {
       setLoadingCard(false);
+    }
+  };
+
+  const handleGoToProfile = async () => {
+    if (!token?.trim()) {
+      setErrorMessage('Authentication token is missing.');
+      return;
+    }
+
+    try {
+      setLoadingProfile(true);
+      setErrorMessage('');
+
+      console.log('Calling enroll/profile/account API...');
+
+      const response = await ABHA.get('enroll/profile/account', {
+        headers: {
+          token: token.trim(),
+        },
+      });
+
+      console.log('enroll/profile/account response:', response.data);
+
+      if (response.data) {
+        setProfileData(response.data);
+
+        // Also persist accounts array if provided by backend
+        const accounts =
+          response.data?.Response?.accounts ??
+          response.data?.accounts ??
+          (response.data?.Response ? [response.data.Response] : [response.data]);
+
+        if (accounts) {
+          setData(accounts);
+        }
+      }
+
+      router.push('/(home)/(tabs)/abha/abha_profile');
+    } catch (error: any) {
+      console.error(
+        'enroll/profile/account API error:',
+        error?.response?.data ?? error?.message
+      );
+
+      setErrorMessage(
+        error?.response?.data?.Message ??
+          error?.response?.data?.message ??
+          error?.response?.data?.Response?.message ??
+          'Unable to retrieve your profile. Please try again.'
+      );
+    } finally {
+      setLoadingProfile(false);
     }
   };
 
@@ -172,10 +227,10 @@ export default function SuccessScreen() {
         <TouchableOpacity
           style={[
             styles.primaryButton,
-            loadingCard && styles.disabledButton,
+            (loadingCard || loadingProfile) && styles.disabledButton,
           ]}
           onPress={handleViewAbhaCard}
-          disabled={loadingCard}
+          disabled={loadingCard || loadingProfile}
           activeOpacity={0.8}
         >
           {loadingCard ? (
@@ -188,14 +243,21 @@ export default function SuccessScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => router.push('/abha/abha_profile')}
-          disabled={loadingCard}
+          style={[
+            styles.secondaryButton,
+            (loadingCard || loadingProfile) && styles.disabledButton,
+          ]}
+          onPress={handleGoToProfile}
+          disabled={loadingCard || loadingProfile}
           activeOpacity={0.8}
         >
-          <Text style={styles.secondaryButtonText}>
-            Go to Profile
-          </Text>
+          {loadingProfile ? (
+            <ActivityIndicator color="#0A5898" />
+          ) : (
+            <Text style={styles.secondaryButtonText}>
+              Go to Profile
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -343,6 +405,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 54,
     backgroundColor: '#FFFFFF',
   },
 

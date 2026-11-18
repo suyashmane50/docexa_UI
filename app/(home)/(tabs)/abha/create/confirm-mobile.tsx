@@ -1,6 +1,4 @@
-
 import React, { useState } from 'react';
-
 import {
   Text,
   StyleSheet,
@@ -9,16 +7,12 @@ import {
   ActivityIndicator,
   View,
 } from 'react-native';
-
 import { Ionicons } from '@expo/vector-icons';
-
 import {
   useRouter,
   useLocalSearchParams,
 } from 'expo-router';
-
 import { ABHA } from '../../../../../utils/api';
-
 type OptionCardProps = {
   id: 'yes' | 'no';
   title: string;

@@ -24,31 +24,32 @@ export default function CreateAddressScreen() {
   const router = useRouter();
 
   // Receive the API response passed from the OTP screen.
-  const {abha_address,transactionId } = useLocalSearchParams<{
+  const { abha_address, transactionId } = useLocalSearchParams<{
     abha_address?: string;
     transactionId?: string;
   }>();
 
   const token = useAbhaStore((state) => state.token);
-
-  // Read the transaction ID from Zustand at request time.
-  // The API call will not use the route parameter as a substitute.
-  const getTransactionId = () => {
-    return useAbhaStore.getState().txnId?.trim() || '';
-  };
+  const txnId = useAbhaStore((state) => state.txnId);
+  const patientData = useAbhaStore((state) => state.data);
+  const savedProfileData = useAbhaStore((state) => state.profileData);
+  const addPatient = useAbhaStore((state) => state.addPatient);
 
   console.log('Frontend token exists:', Boolean(token));
-  console.log('Zustand transaction ID exists:', Boolean(useAbhaStore.getState().txnId));
+  console.log('Zustand transaction ID exists:', Boolean(txnId));
 
   const [selectedAddress, setSelectedAddress] = useState('');
   const [customAddress, setCustomAddress] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [availabilityStatus, setAvailabilityStatus] = useState<
     'idle' | 'checking' | 'available' | 'unavailable'
   >('idle');
   const [checkingAvailability, setCheckingAvailability] = useState(false);
-  console.log('Received suggestion data:', abha_address); 
+  const [createdCustomAddress, setCreatedCustomAddress] = useState('');
+  const [createdABHANumber, setCreatedABHANumber] = useState('');
+  console.log('Received suggestion data:', abha_address);
   console.log('Received transaction ID:', transactionId);
 
   useEffect(() => {
@@ -125,191 +126,224 @@ export default function CreateAddressScreen() {
     }
   }, [abha_address, transactionId]);
 
-const handleCheckAvailability = async () => {
-  const addressToCheck = customAddress.trim().replace(/@abdm$/i, '');
-  const txnId = getTransactionId();
+  const handleCheckAvailability = async () => {
+    const addressToCheck = customAddress.trim().replace(/@abdm$/i, '');
+    const currentTxnId = txnId?.trim() || '';
 
-  setErrorMessage('');
+    setErrorMessage('');
+    setSuccessMessage('');
 
-  if (!addressToCheck) {
-    setAvailabilityStatus('idle');
-    setErrorMessage('Please enter a new ABHA address first.');
-    return;
-  }
-
-  if (!txnId) {
-    setAvailabilityStatus('idle');
-    setErrorMessage('Transaction ID is missing. Please try again.');
-    return;
-  }
-
-  setCheckingAvailability(true);
-  setAvailabilityStatus('checking');
-
-  try {
-    // The user-entered ABHA address is sent in the request BODY.
-    // The transaction ID retrieved from Zustand is sent in the HEADER.
-    const requestBody = {
-      abhaAddress: addressToCheck,
-    };
-
-    console.log('ABHA address request URL: enrollment/enrol/abha-address');
-    console.log('ABHA address request body:', requestBody);
-    console.log('Transaction ID available for header:', Boolean(txnId));
-
-    const response = await ABHA.post(
-      'enrollment/enrol/abha-address',
-      requestBody,
-      {
-        headers: {
-          txnId: txnId,
-        },
-      }
-    );
-
-    console.log('========== ABHA ADDRESS API RESPONSE ==========');
-    console.log('HTTP status:', response?.status);
-    console.log('Response data:', JSON.stringify(response?.data ?? response, null, 2));
-    console.log('===============================================');
-
-    if (response?.status === 200 || response?.status === 202) {
-      setAvailabilityStatus('available');
-      setErrorMessage('');
-    } else {
-      setAvailabilityStatus('unavailable');
-      setErrorMessage(
-        response?.data?.message ??
-          response?.data?.Message ??
-          'This ABHA address is not available. Please try another.'
-      );
+    if (!addressToCheck) {
+      setAvailabilityStatus('idle');
+      setErrorMessage('Please enter a new ABHA address first.');
+      return;
     }
-  } catch (error: any) {
-    console.error('ABHA availability request failed:', error?.response?.data ?? error?.message);
-    setAvailabilityStatus('unavailable');
-    setErrorMessage(
-      error?.response?.data?.message ??
-        error?.response?.data?.Message ??
-        error?.message ??
-        'Unable to check this ABHA address. Please try again.'
-    );
-  } finally {
-    setCheckingAvailability(false);
-  }
-};
 
-const handleContinue = async () => {
-  const txnId = getTransactionId();
+    if (!currentTxnId) {
+      setAvailabilityStatus('idle');
+      setErrorMessage('Transaction ID is missing. Please try again.');
+      return;
+    }
 
-  const selected = selectedAddress.trim();
-  const custom = customAddress.trim();
-
-  // Determine which address the user wants.
-  const rawAddress = custom || selected;
-
-  if (!rawAddress) {
-    setErrorMessage(
-      'Please select a suggested address or enter your own.'
-    );
-    return;
-  }
-
-  if (!txnId) {
-    setErrorMessage(
-      'Transaction ID is missing. Please try again.'
-    );
-    return;
-  }
-
-  // A custom address must be checked before assignment.
-  if (custom && availabilityStatus !== 'available') {
-    setErrorMessage(
-      'Please check the availability of your custom address first.'
-    );
-    return;
-  }
-
-  setErrorMessage('');
-
-  const address = `${rawAddress.replace(/@abdm$/i, '')}@abdm`;
-
-  try {
     setCheckingAvailability(true);
+    setAvailabilityStatus('checking');
 
-    // Step 1: Assign the selected or verified custom address.
-    // Address goes in the BODY; Zustand transaction ID goes in the HEADER.
-    const assignmentRequestBody = {
-      abhaAddress: address.replace(/@abdm$/i, ''),
-    };
+    try {
+      // The user-entered ABHA address is sent in the request BODY.
+      // The transaction ID retrieved from Zustand is sent in the HEADER.
+      const requestBody = {
+        abhaAddress: addressToCheck,
+      };
 
-    const assignmentResponse = await ABHA.post(
-      'enrollment/enrol/abha-address',
-      assignmentRequestBody,
-      {
-        headers: {
-          txnId: txnId,
-        },
-      }
-    );
+      console.log('ABHA address request URL: enrollment/enrol/abha-address');
+      console.log('ABHA address request body:', requestBody);
+      console.log('Transaction ID available for header:', Boolean(currentTxnId));
 
-    console.log('========== ABHA ADDRESS ASSIGNMENT RESPONSE ==========');
-    console.log('HTTP status:', assignmentResponse?.status);
-    console.log(
-      'Response data:',
-      JSON.stringify(assignmentResponse?.data ?? assignmentResponse, null, 2)
-    );
-    console.log('======================================================');
-
-    // Step 2: Fetch the profile after successful assignment.
-    const profileResponse = await ABHA.get(
-      'enroll/profile/account',
-      {
-        headers: {
-          token: token?.trim(),
-        },
-      }
-    );
-
-    const profile = profileResponse.data?.Response;
-    console.log(profile)
-
-    const ABHANumber =
-      profile?.ABHANumber ??
-      profile?.ABHAProfile?.ABHANumber;
-
-    const assignedAddress =
-      profile?.preferredAbhaAddress ?? address;
-
-    if (!ABHANumber) {
-      console.error(
-        'ABHA number was not found in the profile response:',
-        profileResponse.data
+      const response = await ABHA.post(
+        'enrollment/enrol/abha-address',
+        requestBody,
+        {
+          headers: {
+            txnId: currentTxnId,
+          },
+        }
       );
+
+      console.log('========== ABHA ADDRESS API RESPONSE ==========');
+      console.log('HTTP status:', response?.status);
+      console.log('Response data:', JSON.stringify(response?.data ?? response, null, 2));
+      console.log('===============================================');
+
+      if (response?.status === 200 || response?.status === 202) {
+        const result = response?.data?.Response;
+        setCreatedCustomAddress(
+          result?.preferredAbhaAddress ?? `${addressToCheck}@abdm`
+        );
+        setCreatedABHANumber(result?.healthIdNumber ?? '');
+        setAvailabilityStatus('available');
+        setErrorMessage('');
+        setSuccessMessage(
+          `ABHA address created successfully!`
+        );
+      } else {
+        setAvailabilityStatus('unavailable');
+        setSuccessMessage('');
+        setCreatedCustomAddress('');
+        setCreatedABHANumber('');
+        setErrorMessage(
+          response?.data?.Response?.error?.message ??
+            response?.data?.message ??
+            response?.data?.Message ??
+            'Unable to create this ABHA address. Please try another.'
+        );
+      }
+    } catch (error: any) {
+      console.error('ABHA availability request failed:', error?.response?.data ?? error?.message);
+      setAvailabilityStatus('unavailable');
+      setSuccessMessage('');
+      setErrorMessage(
+        error?.response?.data?.Response?.error?.message ??
+          error?.response?.data?.message ??
+          error?.response?.data?.Message ??
+          error?.message ??
+          'Unable to check this ABHA address. Please try again.'
+      );
+    } finally {
+      setCheckingAvailability(false);
+    }
+  };
+
+  const handleContinue = async () => {
+    const currentTxnId = txnId?.trim() || '';
+    const selected = selectedAddress.trim();
+    const custom = customAddress.trim();
+    const isCustom = Boolean(custom);
+    const rawAddress = custom || selected;
+
+    if (!rawAddress) {
+      setErrorMessage('Please select a suggested address or enter your own.');
+      return;
+    }
+    if (!currentTxnId) {
+      setErrorMessage('Transaction ID is missing. Please try again.');
+      return;
+    }
+    if (isCustom && !createdCustomAddress) {
+      setErrorMessage('Please check/create your custom address first.');
+      return;
     }
 
-    // Step 3: Navigate to the success screen.
-    router.push({
-      pathname: '/abha/create/success',
-      params: {
-        ABHANumber: String(ABHANumber ?? ''),
-        abha_address: String(assignedAddress),
-      },
-    });
-  } catch (error: any) {
-    console.error(
-      'ABHA address assignment failed:',
-      error?.response?.data ?? error?.message
-    );
+    setErrorMessage('');
+    const suggestedFormattedAddress =
+      `${rawAddress.replace(/@abdm$/i, '')}@abdm`;
 
-    setErrorMessage(
-      error?.response?.data?.message ??
-        error?.response?.data?.Message ??
-        'Unable to assign the ABHA address. Please try again.'
-    );
-  } finally {
-    setCheckingAvailability(false);
-  }
-};
+    try {
+      setCheckingAvailability(true);
 
+      let finalAddress = isCustom ? createdCustomAddress : suggestedFormattedAddress;
+      let createdNumber = isCustom ? createdABHANumber : '';
+
+      // Suggested addresses are created here once. Custom address was already
+      // created by the Check Availability button, so do not submit it again.
+      if (!isCustom) {
+        const assignmentResponse = await ABHA.post(
+          'enrollment/enrol/abha-address',
+          { abhaAddress: rawAddress.replace(/@abdm$/i, '') },
+          { headers: { txnId: currentTxnId } }
+        );
+
+        if (
+          assignmentResponse?.status !== 200 &&
+          assignmentResponse?.status !== 202
+        ) {
+          throw new Error(
+            assignmentResponse?.data?.Response?.error?.message ??
+              assignmentResponse?.data?.Message ??
+              'Unable to assign the ABHA address.'
+          );
+        }
+
+        const created = assignmentResponse?.data?.Response;
+        finalAddress = created?.preferredAbhaAddress ?? suggestedFormattedAddress;
+        createdNumber = created?.healthIdNumber ?? '';
+      }
+
+      const profileResponse = await ABHA.get(
+        'enroll/profile/account',
+        { headers: { token: token?.trim() ?? '' } }
+      );
+
+      const profile = profileResponse.data?.Response;
+      const ABHANumber =
+        profile?.ABHANumber ??
+        profile?.ABHAProfile?.ABHANumber ??
+        createdNumber;
+      const assignedAddress = profile?.preferredAbhaAddress ?? finalAddress;
+
+
+      // Save the newly created ABHA patient locally after successful creation.
+      // Zustand persist middleware automatically stores this in AsyncStorage.
+      const rawName =
+        profile?.name ??
+        profile?.ABHAProfile?.name ??
+        profile?.fullName ??
+        profile?.ABHAProfile?.fullName ??
+        '';
+      const nameFromParts = [
+        profile?.firstName ?? profile?.ABHAProfile?.firstName,
+        profile?.middleName ?? profile?.ABHAProfile?.middleName,
+        profile?.lastName ?? profile?.ABHAProfile?.lastName,
+      ]
+        .filter((part) => typeof part === 'string' && part.trim())
+        .join(' ');
+      const patientName =
+        (typeof rawName === 'string' && rawName.trim()) ||
+        nameFromParts ||
+        'ABHA Patient';
+      const patientId = String(ABHANumber || assignedAddress || currentTxnId).trim();
+      const now = new Date().toISOString();
+
+      if (!token?.trim()) {
+        throw new Error('Access token is missing. Unable to save the newly created patient.');
+      }
+      if (!patientId) {
+        throw new Error('Patient identifier is missing. Unable to save the newly created patient.');
+      }
+
+      addPatient({
+        patientId,
+        name: patientName,
+        token: token.trim(),
+        txnId: currentTxnId,
+        aadhaar: useAbhaStore.getState().aadhaar,
+        data: patientData ?? profileResponse.data ?? null,
+        profileData: profile ?? savedProfileData ?? null,
+        createdAt: now,
+        lastLoginAt: now,
+      });
+
+      console.log('[ABHA CREATE] Patient saved to Zustand/AsyncStorage:', patientId);
+
+      router.push({
+        pathname: '/abha/create/success',
+        params: {
+          ABHANumber: String(ABHANumber ?? ''),
+          abha_address: String(assignedAddress),
+        },
+      });
+    } catch (error: any) {
+      console.error('ABHA Continue failed:', error?.response?.data ?? error?.message);
+      setErrorMessage(
+        error?.response?.data?.Response?.error?.message ??
+          error?.response?.data?.message ??
+          error?.response?.data?.Message ??
+          error?.message ??
+          'Unable to continue. Please try again.'
+      );
+    } finally {
+      setCheckingAvailability(false);
+    }
+  };
 
   return (
     <ScrollView
@@ -343,12 +377,13 @@ const handleContinue = async () => {
                 style={[
                   styles.suggestionCard,
                   isSelected &&
-                    styles.suggestionCardSelected,
+                  styles.suggestionCardSelected,
                 ]}
                 onPress={() => {
                   setSelectedAddress(address);
                   setCustomAddress('');
                   setErrorMessage('');
+                  setSuccessMessage('');
                 }}
                 activeOpacity={0.8}
               >
@@ -413,10 +448,16 @@ const handleContinue = async () => {
 
             setCustomAddress(cleanedText);
             setErrorMessage('');
+            setSuccessMessage('');
             setAvailabilityStatus('idle');
+            setCreatedCustomAddress('');
+            setCreatedABHANumber('');
           }}
           autoCapitalize="none"
           autoCorrect={false}
+          underlineColorAndroid="transparent"
+          selectionColor="#0A5898"
+          cursorColor="#0A5898"
         />
 
         <Text style={styles.suffixText}>
@@ -427,6 +468,12 @@ const handleContinue = async () => {
       {errorMessage !== '' && (
         <Text style={styles.errorText}>
           {errorMessage}
+        </Text>
+      )}
+
+      {successMessage !== '' && (
+        <Text style={styles.successText}>
+          {successMessage}
         </Text>
       )}
 
@@ -453,7 +500,7 @@ const handleContinue = async () => {
             {availabilityStatus === 'available'
               ? 'Available'
               : availabilityStatus === 'unavailable'
-                ? 'Not available'
+                ? 'Try Again'
                 : 'Check availability'}
           </Text>
         )}
@@ -607,8 +654,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1F2937',
     paddingVertical: 14,
+    
     borderWidth: 0,
     backgroundColor: 'transparent',
+    outlineStyle: 'none' as any,
+    outline: 'none' as any,    
   },
 
   suffixText: {
@@ -621,6 +671,13 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     fontSize: 14,
     marginBottom: 16,
+  },
+
+  successText: {
+    color: '#10B981',
+    fontSize: 14,
+    marginBottom: 16,
+    fontWeight: '500',
   },
 
   secondaryButton: {
@@ -669,4 +726,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

@@ -151,6 +151,9 @@ export default function MobileInputScreen() {
             setErrorMessage('');
           }}
           editable={!loading}
+          underlineColorAndroid="transparent"
+          selectionColor="#0A5898"
+          cursorColor="#0A5898"
         />
       </View>
 
@@ -242,6 +245,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1F2937',
     paddingVertical: 16,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    
+    // 👇 THESE LINES FORCE THE WEB BROWSER TO HIDE THE BLACK FOCUS RECTANGLE 👇
+    outlineStyle: 'none' as any, 
+    outline: 'none' as any,      
+    outlineWidth: 0,
+    outlineColor: 'transparent' as any,
   },
 
   errorText: {

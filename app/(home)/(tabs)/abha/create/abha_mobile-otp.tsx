@@ -8,10 +8,10 @@ import {
   View,
   Text,
   StyleSheet,
+  ActivityIndicator,
   TextInput,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -30,7 +30,6 @@ const MAX_RESEND_ATTEMPTS = 2;
 
 export default function MobileOtpScreen() {
   const router = useRouter();
-
   const storedTransactionId = useAbhaStore(
     (state) => state.txnId
   );
@@ -38,7 +37,6 @@ export default function MobileOtpScreen() {
   const setTxnId = useAbhaStore(
     (state) => state.setTxnId
   );
-
   const {
     mobile: routeMobile,
     txnId: routeTxnId,
@@ -49,9 +47,10 @@ export default function MobileOtpScreen() {
 
   const mobile = routeMobile || '';
 
-  const transactionId =
-    routeTxnId || storedTransactionId;
-
+  // Keep latest transaction ID after resend
+  const [transactionId, setTransactionId] = useState(
+    routeTxnId || storedTransactionId || ''
+  );
   const [otp, setOtp] = useState<string[]>(
     Array(6).fill('')
   );
@@ -62,21 +61,28 @@ export default function MobileOtpScreen() {
     useState(0);
 
   const [loading, setLoading] = useState(false);
+
   const [resending, setResending] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState('');
 
   const inputRefs = useRef<Array<TextInput | null>>([]);
 
-  // Verify enabled automatically after all digits
+  // Actual expiry timestamp
+  const otpExpiryRef = useRef(
+    Date.now() + OTP_TIMER * 1000
+  );
   const isOtpComplete = otp.every(
     (digit) => digit !== ''
   );
 
-  const isVerifyDisabled =
-    !isOtpComplete || loading;
+  const isOtpExpired = timer <= 0;
 
-  // Mask mobile only for UI
+  const isVerifyDisabled =
+    !isOtpComplete ||
+    loading ||
+    resending ||
+    isOtpExpired;
   const maskMobileNumber = (
     mobileNumber: string
   ) => {
@@ -88,32 +94,62 @@ export default function MobileOtpScreen() {
 
     return `******${digits.slice(-4)}`;
   };
-
-  // Countdown
   useEffect(() => {
-    if (timer <= 0) return;
-
     const interval = setInterval(() => {
-      setTimer((previous) =>
-        previous > 0 ? previous - 1 : 0
+
+      const remainingTime = Math.max(
+        0,
+        Math.ceil(
+          (otpExpiryRef.current - Date.now()) / 1000
+        )
       );
-    }, 1000);
+
+      setTimer(remainingTime);
+
+      if (remainingTime <= 0) {
+
+        setOtp(Array(6).fill(''));
+
+        setErrorMessage(
+          'OTP has expired. Please request a new OTP.'
+        );
+
+        clearInterval(interval);
+      }
+
+    }, 250);
 
     return () => clearInterval(interval);
-  }, [timer]);
 
-  // OTP input and paste
+  }, [resendAttempts]);
   const handleOtpChange = (
     text: string,
     index: number
   ) => {
+
+    // Prevent entering OTP after expiry
+    if (Date.now() >= otpExpiryRef.current) {
+
+      setTimer(0);
+
+      setOtp(Array(6).fill(''));
+
+      setErrorMessage(
+        'OTP has expired. Please request a new OTP.'
+      );
+
+      return;
+    }
+
     if (!/^\d*$/.test(text)) return;
 
     setErrorMessage('');
 
     const newOtp = [...otp];
 
+    // Handle pasted OTP
     if (text.length > 1) {
+
       const digits = text
         .replace(/\D/g, '')
         .slice(0, 6);
@@ -135,16 +171,16 @@ export default function MobileOtpScreen() {
 
     setOtp(newOtp);
 
+    // Focus next input
     if (text && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
   };
-
-  // Backspace
   const handleKeyPress = (
     event: any,
     index: number
   ) => {
+
     if (
       event.nativeEvent.key === 'Backspace' &&
       !otp[index] &&
@@ -153,25 +189,30 @@ export default function MobileOtpScreen() {
       inputRefs.current[index - 1]?.focus();
     }
   };
-
-  // Resend OTP
   const handleResendOtp = async () => {
+
     if (resendAttempts >= MAX_RESEND_ATTEMPTS) {
+
       setErrorMessage(
-        'Maximum resend OTP attempts reached please try after some time.'
+        'Maximum resend OTP attempts reached. Please try after some time.'
       );
+
       return;
     }
 
     if (!transactionId || !mobile) {
+
       setErrorMessage(
         'Transaction ID or mobile number is missing.'
       );
+
       return;
     }
 
     try {
+
       setResending(true);
+
       setErrorMessage('');
 
       const response = await ABHA.post(
@@ -193,76 +234,121 @@ export default function MobileOtpScreen() {
         response.status === 200 ||
         response.status === 202
       ) {
+
         const newTxnId =
           data?.Response?.txnId ??
           data?.ResponseJSON?.txnId ??
           data?.txnId;
 
+        // Update transaction ID
         if (newTxnId) {
-          setTxnId(String(newTxnId));
+
+          const updatedTxnId = String(newTxnId);
+
+          setTransactionId(updatedTxnId);
+
+          setTxnId(updatedTxnId);
         }
 
+        // Restart actual expiry timestamp
+        otpExpiryRef.current =
+          Date.now() + OTP_TIMER * 1000;
+
+        // Reset timer
         setTimer(OTP_TIMER);
 
+        // Increment resend attempts
         setResendAttempts(
           (previous) => previous + 1
         );
 
+        // Clear previous OTP
         setOtp(Array(6).fill(''));
 
+        // Focus first input
         inputRefs.current[0]?.focus();
 
         setErrorMessage('');
+
+        console.log(
+          'Mobile OTP timer restarted.'
+        );
+
       } else {
+
         setErrorMessage(
           data?.Response?.message ||
           data?.Message ||
+          data?.message ||
           'Unable to resend OTP. Please try again.'
         );
       }
+
     } catch (error: any) {
+
       const errorData = error?.response?.data;
 
       console.error(
-        'Resend OTP error:',
+        'Mobile resend OTP error:',
         errorData ?? error?.message
       );
 
       setErrorMessage(
         errorData?.Response?.message ||
         errorData?.Message ||
+        errorData?.message ||
         'Unable to resend OTP. Please try again.'
       );
+
     } finally {
+
       setResending(false);
+
     }
   };
-
-  // Verify OTP
   const handleVerifyOtp = async () => {
+
     if (loading) return;
+
+    // Check actual OTP expiry
+    if (Date.now() >= otpExpiryRef.current) {
+
+      setTimer(0);
+
+      setOtp(Array(6).fill(''));
+
+      setErrorMessage(
+        'OTP has expired. Please request a new OTP.'
+      );
+
+      return;
+    }
 
     setErrorMessage('');
 
     const enteredOtp = otp.join('');
 
     if (enteredOtp.length !== 6) {
+
       setErrorMessage(
         'Please enter the complete 6-digit OTP.'
       );
+
       return;
     }
 
     if (!transactionId) {
+
       setErrorMessage(
         'Transaction ID is missing. Please request OTP again.'
       );
+
       return;
     }
 
-    setLoading(true);
-
     try {
+
+      setLoading(true);
       const response = await ABHA.post(
         '/enrollment/auth/byAbdm',
         {
@@ -326,14 +412,14 @@ export default function MobileOtpScreen() {
         );
 
       if (!verificationSucceeded) {
+
         setErrorMessage(
           message ||
           'OTP verification failed. Please enter the correct OTP.'
         );
+
         return;
       }
-
-      // Fetch ABHA address suggestions
       const suggestionResponse = await ABHA.get(
         '/enrollment/enrol/suggestion',
         {
@@ -375,25 +461,30 @@ export default function MobileOtpScreen() {
         !Array.isArray(addressList) ||
         addressList.length === 0
       ) {
+
         setErrorMessage(
           'Mobile verified successfully, but ABHA suggestions were not returned.'
         );
+
         return;
       }
-
       router.replace({
         pathname: '/abha/create/address',
+
         params: {
           abha_address: JSON.stringify(
             addressList.slice(0, 3)
           ),
+
           transactionId:
             responseBody?.txnId ??
             responseBody?.transactionId ??
             transactionId,
         },
       });
+
     } catch (error: any) {
+
       const errorData = error?.response?.data;
 
       console.error(
@@ -407,17 +498,20 @@ export default function MobileOtpScreen() {
         errorData?.message ||
         'Unable to verify OTP. Please try again.'
       );
+
     } finally {
+
       setLoading(false);
+
     }
   };
-
   return (
     <ScrollView
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
+
       <Text style={styles.title}>
         Enter verification code
       </Text>
@@ -426,7 +520,10 @@ export default function MobileOtpScreen() {
         We've sent a 6-digit OTP to your mobile number.
       </Text>
 
+      {/* MASKED MOBILE NUMBER */}
+
       <View style={styles.phoneBadge}>
+
         <Ionicons
           name="phone-portrait-outline"
           size={16}
@@ -436,42 +533,66 @@ export default function MobileOtpScreen() {
         <Text style={styles.phoneText}>
           +91 {maskMobileNumber(mobile)}
         </Text>
+
       </View>
 
-      {/* OTP boxes */}
+      {/* OTP INPUT BOXES */}
+
       <View style={styles.otpContainer}>
+
         {otp.map((digit, index) => (
+
           <TextInput
             key={index}
+
             ref={(ref) => {
               inputRefs.current[index] = ref;
             }}
+
             style={[
               styles.otpInput,
+
               index === 0 &&
                 !digit &&
                 styles.otpInputActive,
+
               errorMessage !== '' &&
                 styles.otpInputError,
             ]}
+
             value={digit}
+
             onChangeText={(text) =>
               handleOtpChange(text, index)
             }
+
             onKeyPress={(event) =>
               handleKeyPress(event, index)
             }
+
             keyboardType="number-pad"
+
             maxLength={6}
+
             blurOnSubmit={false}
-            editable={!loading}
+
+            editable={
+              timer > 0 &&
+              !loading &&
+              !resending
+            }
           />
+
         ))}
+
       </View>
 
-      {/* Error */}
+      {/* ERROR MESSAGE */}
+
       {errorMessage !== '' && (
+
         <View style={styles.errorContainer}>
+
           <Ionicons
             name="alert-circle-outline"
             size={20}
@@ -481,71 +602,101 @@ export default function MobileOtpScreen() {
           <Text style={styles.errorText}>
             {errorMessage}
           </Text>
+
         </View>
+
       )}
 
-      {/* Resend countdown */}
+      {/* COUNTDOWN AND RESEND OTP */}
+
       <View style={styles.resendContainer}>
+
         {timer > 0 ? (
+
           <Text style={styles.resendText}>
-            Resend OTP in{' '}
+            OTP expires in{' '}
+
             <Text style={styles.boldText}>
               00:{timer < 10 ? `0${timer}` : timer}
             </Text>
           </Text>
+
         ) : resendAttempts < MAX_RESEND_ATTEMPTS ? (
+
           <TouchableOpacity
             onPress={handleResendOtp}
             disabled={resending}
             activeOpacity={0.7}
           >
+
             {resending ? (
+
               <ActivityIndicator color="#0A5898" />
+
             ) : (
+
               <Text style={styles.resendButtonText}>
                 Resend OTP
               </Text>
+
             )}
+
           </TouchableOpacity>
+
         ) : (
+
           <Text style={styles.resendDisabledText}>
             Maximum resend attempts reached
           </Text>
+
         )}
+
       </View>
+
+      {/* RESEND ATTEMPTS */}
 
       <Text style={styles.attemptText}>
         Resend attempt {resendAttempts} of {MAX_RESEND_ATTEMPTS}
       </Text>
 
-      {/* Verify */}
+      {/* VERIFY OTP BUTTON */}
+
       <TouchableOpacity
         style={[
           styles.primaryButton,
+
           isVerifyDisabled &&
             styles.primaryButtonDisabled,
-      ]}
-      onPress={handleVerifyOtp}
-      disabled={isVerifyDisabled}
-      activeOpacity={0.8}
+        ]}
+        onPress={handleVerifyOtp}
+        disabled={isVerifyDisabled}
+        activeOpacity={0.8}
       >
+
         {loading ? (
+
           <ActivityIndicator color="#FFFFFF" />
+
         ) : (
+
           <Text style={styles.primaryButtonText}>
             Verify OTP
           </Text>
+
         )}
+
       </TouchableOpacity>
 
       <Text style={styles.footerNote}>
         Enter the OTP sent to your registered mobile number.
       </Text>
+
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+
   container: {
     paddingHorizontal: 20,
     paddingBottom: 40,
@@ -692,4 +843,5 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     lineHeight: 18,
   },
+
 });

@@ -88,6 +88,15 @@ export default function TabLayout() {
               />
             ),
           }}
+          listeners={{
+            tabPress: (e) => {
+              if (pathname === "/abha") {
+                return;
+              }
+              e.preventDefault();
+              router.replace("/abha");
+            },
+          }}
         />
 
         <Tabs.Screen

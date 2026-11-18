@@ -1,46 +1,59 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ABHA } from '../../../../../utils/api'; 
+import { ABHA } from '../../../../../utils/api';
 import { useAbhaStore } from '../../abha/stores/abhaStore';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity, SafeAreaView,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Pressable, Alert
 } from 'react-native';
-import { Feather } from '@expo/vector-icons'; 
+import { Feather, Ionicons } from '@expo/vector-icons';
 
 export default function MobileOtpScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-const setTxnId = useAbhaStore((state: any) => state.setTxnId);
-  // Extract params passed from the previous screen
+  const setTxnId = useAbhaStore((state: any) => state.setTxnId);
+  const addPatient = useAbhaStore((state: any) => state.addPatient);
+
   const mobileNumber = params.mobile as string;
-  const txnId = params.txnId as string;
-    const [message, setMessage] = useState('');
-const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
+  const initialTxnId = params.txnId as string;
+
+  const [currentTxnId, setCurrentTxnId] = useState(initialTxnId);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
   const [otp, setOtp] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
   const [timer, setTimer] = useState(30);
   const [isTimerActive, setIsTimerActive] = useState(true);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [isVerifyLocked, setIsVerifyLocked] = useState(false);
+  const [resendCount, setResendCount] = useState(0);
 
+  const [errorMsg, setErrorMsg] = useState('');
   const inputRef = useRef<TextInput>(null);
 
-  // Match the Green Theme from the Mobile Login screen
   const theme = {
-    accent: '#059669', // Green
-    lightBg: '#ECFDF5', // Very light green
+    accent: '#059669',
+    lightBg: '#ECFDF5',
   };
 
-  // Countdown Timer for Resend
+  // 30-second countdown
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (isTimerActive && timer > 0) {
-      interval = setInterval(() => {
-        setTimer((prev) => prev - 1);
-      }, 1000);
-    } else if (timer === 0) {
+    if (!isTimerActive || timer <= 0) {
       setIsTimerActive(false);
+      setIsVerifyLocked(false);
+      return;
     }
+
+    const interval = setInterval(() => {
+      setTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
     return () => clearInterval(interval);
   }, [isTimerActive, timer]);
 
@@ -49,128 +62,220 @@ const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
     const cleaned = text.replace(/\D/g, '').slice(0, 6);
     setOtp(cleaned);
   };
-const handleVerify = async () => {
-  if (otp.length !== 6 || isLoading) {
-    return;
-  }
 
-  if (!txnId) {
-    setMessage('Transaction ID is missing. Please request OTP again.');
-    setMessageType('error');
-    return;
-  }
+  // Verify OTP
+  const handleVerify = async () => {
+    if (otp.length !== 6 || isLoading || isVerifyLocked) return;
 
-  setIsLoading(true);
-  setMessage('');
-  setMessageType('');
+    if (!currentTxnId) {
+      setMessage('Transaction ID is missing. Please request OTP again.');
+      setMessageType('error');
+      return;
+    }
 
-  try {
-    const payload = {
-      txnId: txnId,
-      otp: otp,
-    };
+    // Lock verify button for 30 seconds
+    setIsVerifyLocked(true);
+    setTimer(30);
+    setIsTimerActive(true);
 
-    console.log('MOBILE OTP VERIFY REQUEST:', payload);
+    setIsLoading(true);
+    setMessage('');
+    setMessageType('');
 
-    const response = await ABHA.post(
-      'verify/abha/mobile-number/otp',
-      payload
-    );
+    try {
+      const response = await ABHA.post(
+        'verify/abha/mobile-number/otp',
+        {
+          txnId: currentTxnId,
+          otp,
+        }
+      );
 
-    console.log('MOBILE OTP VERIFY RESPONSE:', response.data);
-    console.log('HTTP STATUS:', response.status);
+      const responseData = response.data?.Response;
 
-    // Check authentication result
-    if (
-      response.data?.Response?.authResult?.toLowerCase() === 'success'
-    ) {
-      setMessage('OTP verified successfully!');
-      setMessageType('success');
+      if (responseData?.authResult?.toLowerCase() === 'success') {
+        // Save the authenticated patient into the same local store as Aadhaar login.
+        const accounts = responseData?.accounts ?? responseData?.account ?? [];
+        const authToken =
+          responseData?.token ||
+          responseData?.tokens?.token ||
+          responseData?.accessToken ||
+          responseData?.access_token;
 
-      router.replace('/(home)/(tabs)/abha/abha_profile');
-    } else {
+
+        let profileData: any = null;
+        if (authToken) {
+          try {
+            const profileResponse = await ABHA.get('enroll/profile/account', {
+              headers: { token: authToken },
+            });
+            profileData = profileResponse.data;
+            } catch (profileError) {
+            console.warn('Mobile login: profile fetch failed; using OTP response data.', profileError);
+          }
+        }
+
+        const firstAccount = Array.isArray(accounts) ? (accounts[0] ?? {}) : (accounts ?? {});
+        const patientName =
+          firstAccount?.name || firstAccount?.fullName || firstAccount?.Name ||
+          profileData?.name || profileData?.fullName || profileData?.profile?.name ||
+          profileData?.data?.name || 'Mobile Patient';
+        const identifier =
+          firstAccount?.ABHANumber || firstAccount?.abhaNumber || firstAccount?.abhaNo ||
+          firstAccount?.ABHA_NUMBER || firstAccount?.preferredAbhaAddress ||
+          firstAccount?.abhaAddress || firstAccount?.abha_address ||
+          profileData?.ABHANumber || profileData?.abhaNumber ||
+          profileData?.preferredAbhaAddress || profileData?.abhaAddress ||
+          profileData?.profile?.ABHANumber || profileData?.profile?.abhaNumber ||
+          mobileNumber;
+        const patientId = String(identifier || mobileNumber || '')
+          .replace(/[^a-zA-Z0-9]/g, '')
+          .toLowerCase();
+
+        if (!patientId) {
+          throw new Error('Unable to identify this patient.');
+        }
+
+        const now = new Date().toISOString();
+        addPatient({
+          patientId,
+          name: patientName,
+          token: authToken || null,
+          txnId: currentTxnId,
+          aadhaar: null,
+          data: accounts || responseData,
+          profileData,
+          createdAt: now,
+          lastLoginAt: now,
+        });
+        setTxnId(currentTxnId);
+
+        setMessage('OTP verified successfully!');
+        setMessageType('success');
+        router.replace('/(home)/(tabs)/abha/abha_profile');
+      } else {
+        setMessage(
+          response.data?.Response?.message || 'OTP verification failed.'
+        );
+        setMessageType('error');
+      }
+    } catch (error: any) {
+      const status = error.response?.status;
+
       setMessage(
-        response.data?.Response?.message ||
-        'OTP verification failed.'
+        error.response?.data?.Response?.message ||
+        error.response?.data?.message ||
+        (status === 429
+          ? 'Too many attempts. Please wait before trying again.'
+          : 'Invalid OTP. Please try again.')
       );
 
       setMessageType('error');
-    }
-  } catch (error: any) {
-    console.log('MOBILE OTP VERIFY ERROR:', error);
-
-    console.log(
-      'ERROR RESPONSE:',
-      JSON.stringify(error.response?.data, null, 2)
-    );
-
-    const status = error.response?.status;
-
-    setMessage(
-      error.response?.data?.Response?.message ||
-      error.response?.data?.message ||
-      (status === 429
-        ? 'Too many attempts. Please wait before trying again.'
-        : 'Invalid OTP. Please try again.')
-    );
-
-    setMessageType('error');
-  } finally {
-    setIsLoading(false);
-  }
-};
-  const handleResend = async () => {
-    if (isTimerActive || isLoading) return;
-    
-    setIsLoading(true);
-    try {
-      const payload = { 'mobile-number': mobileNumber }; 
-      const response=await ABHA.post('verify/abha/mobile-number/request/otp', payload);
-      console.log('MOBILE OTP RESEND RESPONSE:', response.data);
-      setTimer(30);
-      setIsTimerActive(true);
-      setOtp('');
-      Alert.alert('OTP Resent', 'A new OTP has been sent to your mobile number.');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to resend OTP. Please try again later.');
     } finally {
       setIsLoading(false);
     }
   };
-  const isButtonDisabled = otp.length !== 6 || isLoading;
+
+  // Resend OTP - maximum 2 successful requests
+  const handleResend = async () => {
+    if (isTimerActive || isLoading || resendCount >= 2) return;
+
+    if (!mobileNumber) {
+      setMessage('Mobile number is missing. Please go back and try again.');
+      setMessageType('error');
+      return;
+    }
+
+    setIsLoading(true);
+    setMessage('');
+    setMessageType('');
+
+    try {
+      const response = await ABHA.post(
+        'verify/abha/mobile-number/request/otp',
+        {
+          'mobile-number': mobileNumber,
+        }
+      );
+
+      // Count only successful resend requests
+      if (response.status === 200 || response.status === 202) {
+        setResendCount((prev) => prev + 1);
+
+        // Update transaction ID if the backend returns a new one
+        const newTxnId = response.data?.Response?.txnId;
+
+        if (newTxnId) {
+          setCurrentTxnId(newTxnId);
+          setTxnId(newTxnId);
+        }
+
+        setOtp('');
+        setErrorMsg('');
+
+        // Start another 30-second resend cooldown
+        setTimer(30);
+        setIsTimerActive(true);
+
+        // Allow verification with the newly received OTP
+        setIsVerifyLocked(false);
+
+        Alert.alert(
+          'OTP Resent',
+          'A new OTP has been sent to your mobile number.'
+        );
+      } else {
+        setMessage(
+          response.data?.Response?.message || 'Failed to resend OTP.'
+        );
+        setMessageType('error');
+      }
+    } catch (error: any) {
+      setMessage(
+        error.response?.data?.Response?.message ||
+        error.response?.data?.message ||
+        'Failed to resend OTP. Please try again later.'
+      );
+      setMessageType('error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const isButtonDisabled =
+    otp.length !== 6 || isLoading || isVerifyLocked;
 
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoidingView}>
-        
-        {/* Header */}
+
+        {/* UPDATED HEADER WITH IONICONS */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>‹</Text>
+            <Ionicons name="chevron-back" size={24} color="#1F2937" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Login with ABHA</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          
           <Text style={styles.title}>Verify OTP</Text>
           <Text style={styles.subtitle}>
-            We have sent a 6-digit OTP to your registered mobile number <Text style={{fontWeight: '600', color: '#111827'}}>+91 {mobileNumber}</Text>.
+            We have sent a 6-digit OTP to your registered mobile number <Text style={{ fontWeight: '600', color: '#111827' }}>+91 {mobileNumber}</Text>.
           </Text>
 
-          {/* OTP Input Boxes Container */}
           <Pressable style={styles.otpContainer} onPress={() => inputRef.current?.focus()}>
             {[...Array(6)].map((_, index) => {
               const isFocused = otp.length === index;
               const hasValue = otp.length > index;
+
               return (
-                <View 
-                  key={index} 
+                <View
+                  key={index}
                   style={[
-                    styles.otpBox, 
+                    styles.otpBox,
                     isFocused && { borderColor: theme.accent, backgroundColor: theme.lightBg },
                     hasValue && { borderColor: theme.accent },
-                    errorMsg ? { borderColor: '#DC2626' } : {} // Red border on error
+                    errorMsg ? { borderColor: '#DC2626' } : {}
                   ]}
                 >
                   <Text style={[styles.otpText, hasValue && { color: theme.accent }]}>
@@ -180,7 +285,6 @@ const handleVerify = async () => {
               );
             })}
 
-            {/* Hidden TextInput to capture keystrokes */}
             <TextInput
               ref={inputRef}
               style={styles.hiddenInput}
@@ -188,14 +292,13 @@ const handleVerify = async () => {
               onChangeText={handleOtpChange}
               maxLength={6}
               keyboardType="number-pad"
-              textContentType="oneTimeCode" // iOS SMS Auto-fill
-              autoComplete="sms-otp"        // Android SMS Auto-fill
+              textContentType="oneTimeCode"
+              autoComplete="sms-otp"
               autoFocus
               editable={!isLoading}
             />
           </Pressable>
 
-          {/* Error Message Display */}
           {errorMsg !== '' && (
             <View style={styles.errorContainer}>
               <Feather name="alert-circle" size={14} color="#DC2626" />
@@ -203,37 +306,61 @@ const handleVerify = async () => {
             </View>
           )}
 
-          {/* Timer & Resend */}
+          {message !== '' && (
+            <View style={styles.errorContainer}>
+              <Feather
+                name={messageType === 'success' ? 'check-circle' : 'alert-circle'}
+                size={14}
+                color={messageType === 'success' ? '#15803D' : '#DC2626'}
+              />
+              <Text
+                style={[
+                  styles.errorText,
+                  messageType === 'success' && { color: '#15803D' }
+                ]}
+              >
+                {message}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.timerContainer}>
             <Text style={styles.timerText}>Didn't receive the OTP? </Text>
-            <TouchableOpacity onPress={handleResend} disabled={isTimerActive || isLoading}>
-              <Text style={[styles.resendText, isTimerActive ? { color: '#9CA3AF' } : { color: theme.accent, fontWeight: '700' }]}>
-                {isTimerActive ? `Resend in 00:${timer.toString().padStart(2, '0')}` : 'Resend OTP'}
+
+            {isTimerActive ? (
+              <Text style={[styles.resendText, { color: '#9CA3AF' }]}>
+                Resend in 00:{timer.toString().padStart(2, '0')}
               </Text>
-            </TouchableOpacity>
+            ) : resendCount < 2 ? (
+              <TouchableOpacity
+                onPress={handleResend}
+                disabled={isLoading}
+              >
+                <Text style={[styles.resendText, { color: theme.accent, fontWeight: '700' }]}>
+                  Resend OTP
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={[styles.resendText, { color: '#9CA3AF' }]}>
+                Resend limit reached
+              </Text>
+            )}
           </View>
 
-          {/* Verify Button */}
-          <TouchableOpacity 
-            style={[
-              styles.button, 
-              { backgroundColor: theme.accent },
-              isButtonDisabled && styles.buttonDisabled
-            ]} 
-            activeOpacity={0.8} 
-            onPress={handleVerify} 
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: theme.accent }, isButtonDisabled && styles.buttonDisabled]}
+            activeOpacity={0.8}
+            onPress={handleVerify}
             disabled={isButtonDisabled}
           >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.buttonText}>Verify & Login</Text>
-            )}
+            {isLoading
+              ? <ActivityIndicator size="small" color="#FFFFFF" />
+              : <Text style={styles.buttonText}>Verify & Login</Text>
+            }
           </TouchableOpacity>
 
           <View style={styles.spacer} />
 
-          {/* Footer */}
           <View style={styles.footer}>
             <Text style={styles.linkText}>Terms of Service</Text>
             <Text style={styles.dot}>•</Text>
@@ -248,53 +375,39 @@ const handleVerify = async () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   keyboardAvoidingView: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 20 : 10, paddingBottom: 15 },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E8F1FA', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  backIcon: { fontSize: 28, color: '#0A58CA', fontWeight: '300', marginTop: -4 },
+
+  // UPDATED STYLES
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 20 : 10,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  backButton: {
+    padding: 4,
+    marginRight: 12,
+    marginLeft: -4,
+  },
   headerTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
-  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 10 },
-  
+
+  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20 },
   title: { fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#6B7280', marginBottom: 30, lineHeight: 20 },
-
-  // --- OTP INPUT STYLES ---
-  otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    position: 'relative',
-  },
-  otpBox: {
-    width: 45,
-    height: 55,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
+  otpContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, position: 'relative' },
+  otpBox: { width: 45, height: 55, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
   otpText: { fontSize: 22, fontWeight: '700', color: '#111827' },
   hiddenInput: { position: 'absolute', width: '100%', height: '100%', opacity: 0 },
-
-  // --- ERROR & TIMER ---
   errorContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, paddingHorizontal: 4 },
   errorText: { fontSize: 13, color: '#DC2626', marginLeft: 6 },
   timerContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 30, marginTop: 10 },
   timerText: { fontSize: 14, color: '#6B7280' },
   resendText: { fontSize: 14, fontWeight: '600' },
-
-  // --- BUTTON ---
   button: { borderRadius: 10, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', minHeight: 54 },
   buttonDisabled: { backgroundColor: '#9CA3AF' },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-
-  // --- FOOTER ---
   spacer: { flex: 1, minHeight: 40 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingBottom: 30, marginTop: 20 },
   linkText: { fontSize: 12, color: '#6B7280', fontWeight: '500' },

@@ -13,12 +13,11 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { ABHA } from '../../../../../utils/api';
 
 export default function AadhaarLoginScreen() {
   const [aadhaar, setAadhaar] = useState('');
-  // Removed showAadhaar state
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -27,22 +26,17 @@ export default function AadhaarLoginScreen() {
   const setTxnId = useAbhaStore((state: any) => state.setTxnId);
 
   const theme = {
-    accent: '#1E3A8A', // Navy Blue
+    accent: '#1E3A8A',
     lightBg: '#EFF6FF',
   };
 
-  // Robust Aadhaar formatting
   const handleAadhaarChange = (text: string) => {
     const cleaned = text.replace(/\D/g, '').slice(0, 12);
-    
     let formatted = '';
     for (let i = 0; i < cleaned.length; i++) {
-      if (i > 0 && i % 4 === 0) {
-        formatted += ' ';
-      }
+      if (i > 0 && i % 4 === 0) formatted += ' ';
       formatted += cleaned[i];
     }
-    
     setAadhaar(formatted);
     setMessage('');
     setMessageType('');
@@ -50,7 +44,6 @@ export default function AadhaarLoginScreen() {
 
   const handleclick = async () => {
     if (isLoading) return;
-
     const aadhaarNumber = aadhaar.replace(/\s/g, '');
     setMessage('');
     setMessageType('');
@@ -62,7 +55,6 @@ export default function AadhaarLoginScreen() {
     }
 
     setIsLoading(true);
-
     try {
       const response = await ABHA.post('verify/aadhar/request/otp', {
         aadhar: aadhaarNumber,
@@ -77,9 +69,7 @@ export default function AadhaarLoginScreen() {
           setMessageType('error');
           return;
         }
-
         setTxnId(txnId);
-
         router.push({
           pathname: '/abha/login/aadharOTP',
           params: { mobile: mobileMessage },
@@ -89,7 +79,6 @@ export default function AadhaarLoginScreen() {
         setMessageType('error');
       }
     } catch (error: any) {
-      console.log('AADHAAR OTP ERROR:', error);
       const backendMessage = error.response?.data?.Response?.message || error.response?.data?.message;
       setMessage(backendMessage || 'Failed to send OTP. Please try again.');
       setMessageType('error');
@@ -104,15 +93,15 @@ export default function AadhaarLoginScreen() {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoidingView}>
         
+        {/* UPDATED HEADER WITH IONICONS */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backIcon}>‹</Text>
+            <Ionicons name="chevron-back" size={24} color="#1F2937" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Login with ABHA</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          
           <Text style={styles.title}>Enter your Aadhaar number</Text>
           <Text style={styles.subtitle}>Your Aadhaar will be used to verify your identity and login to your ABHA.</Text>
 
@@ -132,12 +121,11 @@ export default function AadhaarLoginScreen() {
                 keyboardType="number-pad"
                 value={aadhaar}
                 onChangeText={handleAadhaarChange}
-                maxLength={14} // 12 digits + 2 spaces
+                maxLength={14}
                 editable={!isLoading}
                 underlineColorAndroid="transparent"
               />
             </View>
-            {/* Removed the Eye Icon TouchableOpacity here */}
           </View>
 
           <View style={styles.microcopyContainer}>
@@ -151,20 +139,12 @@ export default function AadhaarLoginScreen() {
           </View>
 
           <TouchableOpacity
-            style={[
-              styles.button,
-              { backgroundColor: theme.accent },
-              isButtonDisabled && styles.buttonDisabled,
-            ]}
+            style={[styles.button, { backgroundColor: theme.accent }, isButtonDisabled && styles.buttonDisabled]}
             activeOpacity={0.8}
             onPress={handleclick}
             disabled={isButtonDisabled}
           >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.buttonText}>Send OTP</Text>
-            )}
+            {isLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.buttonText}>Send OTP</Text>}
           </TouchableOpacity>
 
           {message !== '' && (
@@ -200,11 +180,25 @@ export default function AadhaarLoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   keyboardAvoidingView: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 20 : 10, paddingBottom: 15 },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#E8F1FA', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  backIcon: { fontSize: 28, color: '#0A58CA', fontWeight: '300', marginTop: -4 },
+  
+  // UPDATED STYLES
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 20 : 10,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  backButton: {
+    padding: 4,
+    marginRight: 12,
+    marginLeft: -4,
+  },
   headerTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
-  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 10 },
+
+  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20 },
   title: { fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#6B7280', marginBottom: 25, lineHeight: 20 },
   inputLabelAbove: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 8 },

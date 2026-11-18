@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  useRouter,
-  useLocalSearchParams,
-} from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 import {
   StyleSheet,
@@ -18,34 +15,46 @@ import {
   Pressable,
 } from 'react-native';
 
-import { Feather } from '@expo/vector-icons';
-
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { ABHA } from '../../../../../utils/api';
-
 import { useAbhaStore } from '../../abha/stores/abhaStore';
+
 export default function AadhaarOtpScreen() {
   const router = useRouter();
 
-  // Mobile message received from Aadhaar OTP request
-  const { mobile } = useLocalSearchParams<{
+  const { mobile, aadhaar } = useLocalSearchParams<{
     mobile: string;
+    aadhaar: string;
   }>();
 
-  // Transaction ID from Zustand
+  // Zustand store
   const txnId = useAbhaStore((state: any) => state.txnId);
+  const setTxnId = useAbhaStore((state: any) => state.setTxnId);
   const setData = useAbhaStore((state: any) => state.setData);
   const setToken = useAbhaStore((state: any) => state.setToken);
   const setProfileData = useAbhaStore((state: any) => state.setProfileData);
-  const [otp, setOtp] = useState('');
+  const addPatient = useAbhaStore((state: any) => state.addPatient);
 
+  // OTP transaction
+  const [currentTxnId, setCurrentTxnId] = useState(txnId);
+
+  // OTP state
+  const [otp, setOtp] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Timer state
   const [timer, setTimer] = useState(30);
   const [isTimerActive, setIsTimerActive] = useState(true);
+  const [isVerifyLocked, setIsVerifyLocked] = useState(false);
 
+  // Resend state
+  const [resendCount, setResendCount] = useState(0);
+
+  // Message state
   const [message, setMessage] = useState('');
-  const [messageType, setMessageType] =
-    useState<'success' | 'error' | ''>('');
+  const [messageType, setMessageType] = useState<'success' | 'error' | ''>(
+    '',
+  );
 
   const inputRef = useRef<TextInput>(null);
 
@@ -53,11 +62,10 @@ export default function AadhaarOtpScreen() {
     accent: '#1E3A8A',
     lightBg: '#EFF6FF',
   };
-
-  // Countdown Timer
   useEffect(() => {
     if (!isTimerActive || timer <= 0) {
       setIsTimerActive(false);
+      setIsVerifyLocked(false);
       return;
     }
 
@@ -74,140 +82,296 @@ export default function AadhaarOtpScreen() {
 
     return () => clearInterval(interval);
   }, [isTimerActive, timer]);
-
-  // OTP input
   const handleOtpChange = (text: string) => {
     const cleaned = text.replace(/\D/g, '').slice(0, 6);
 
     setOtp(cleaned);
-
     setMessage('');
     setMessageType('');
   };
 
-  // Verify Aadhaar OTP
+  const getFirstAccount = (accounts: any) => {
+    if (Array.isArray(accounts)) {
+      return accounts[0] ?? {};
+    }
+
+    if (accounts && typeof accounts === 'object') {
+      return accounts;
+    }
+
+    return {};
+  };
+
+  const getPatientName = (
+    account: any,
+    profile: any,
+  ): string => {
+    return (
+      account?.name ||
+      account?.fullName ||
+      account?.Name ||
+      profile?.name ||
+      profile?.fullName ||
+      profile?.profile?.name ||
+      profile?.data?.name ||
+      'ABHA Patient'
+    );
+  };
+
+  const getAbhaIdentifier = (
+    account: any,
+    profile: any,
+  ): string | null => {
+    return (
+      account?.ABHANumber ||
+      account?.abhaNumber ||
+      account?.abhaNo ||
+      account?.ABHA_NUMBER ||
+      account?.preferredAbhaAddress ||
+      account?.abhaAddress ||
+      account?.abha_address ||
+      profile?.ABHANumber ||
+      profile?.abhaNumber ||
+      profile?.preferredAbhaAddress ||
+      profile?.abhaAddress ||
+      profile?.profile?.ABHANumber ||
+      profile?.profile?.abhaNumber ||
+      null
+    );
+  };
+
+  const createPatientId = (identifier: string): string => {
+    return identifier
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toLowerCase();
+  };
   const handleVerify = async () => {
-    if (otp.length !== 6 || isLoading) {
+    if (otp.length !== 6 || isLoading || isVerifyLocked) {
       return;
     }
 
-    if (!txnId) {
-      setMessage(
-        'Transaction ID is missing. Please request OTP again.'
-      );
+    if (!currentTxnId) {
+      setMessage('Transaction ID is missing. Please request OTP again.');
       setMessageType('error');
       return;
     }
+    setIsVerifyLocked(true);
+    setTimer(30);
+    setIsTimerActive(true);
 
     setIsLoading(true);
-
     setMessage('');
     setMessageType('');
 
     try {
-      const payload = {
-        txnId: txnId,
-        otp: otp,
-      };
+      const response = await ABHA.post('verify/aadhar/otp', {
+        txnId: currentTxnId,
+        otp,
+      });
 
-      console.log('AADHAAR VERIFY REQUEST:', payload);
-
-      const response = await ABHA.post(
-        'verify/aadhar/otp',
-        payload
-      );
       const responseData = response.data?.Response;
-      console.log('AADHAAR VERIFY RESPONSE:', response.data);
 
-      console.log('HTTP STATUS:', response.status);
-
-      // Success condition
       if (
-        responseData?.authResult?.toLowerCase() === 'success'
+        responseData?.authResult?.toLowerCase() !== 'success'
       ) {
-        // Save only the accounts array for the profile screen.
-        setData(responseData.accounts ?? []);
-
-        // Save access token separately in Zustand.
-        if (responseData.token) {
-          setToken(responseData.token);
-        }
-
-        // Read the token from Zustand and send it in the request header.
-        const storedToken = useAbhaStore.getState().token;
-
-        if (!storedToken) {
-          throw new Error('Authentication token is missing from Zustand.');
-        }
-
-        // Fetch the authenticated ABHA profile/account details.
-        const profileResponse = await ABHA.get(
-          'enroll/profile/account',
-          {
-            headers: {
-              token: storedToken,
-            },
-          }
-        );
-
-        console.log('ENROLL PROFILE ACCOUNT RESPONSE:', profileResponse.data);
-
-        // Persist the complete profile/account API response in Zustand.
-        setProfileData(profileResponse.data);
-
-        setMessage('OTP verified successfully!');
-        setMessageType('success');
-
-        router.replace('/(home)/(tabs)/abha/abha_profile');
-      } else {
         setMessage(
-          response.data?.Response?.message ||
-            'OTP verification failed.'
+          responseData?.message || 'OTP verification failed.',
         );
 
         setMessageType('error');
+        return;
       }
+      const accounts = responseData?.accounts ?? [];
+
+      const authToken =
+        responseData?.token ||
+        responseData?.accessToken ||
+        responseData?.access_token;
+
+      // Save authenticated session information
+      setData(accounts);
+
+      if (authToken) {
+        setToken(authToken);
+      }
+      if (!authToken) {
+        throw new Error(
+          'Authentication token was not received from the server.',
+        );
+      }
+      const profileResponse = await ABHA.get(
+        'enroll/profile/account',
+        {
+          headers: {
+            token: authToken,
+          },
+        },
+      );
+
+      const profileData = profileResponse.data;
+
+      setProfileData(profileData);
+      const firstAccount = getFirstAccount(accounts);
+
+      const patientName = getPatientName(
+        firstAccount,
+        profileData,
+      );
+
+      const abhaIdentifier = getAbhaIdentifier(
+        firstAccount,
+        profileData,
+      );
+
+      if (!abhaIdentifier) {
+        console.error(
+          'ABHA identifier was not found in account/profile response.',
+        );
+
+        throw new Error(
+          'Unable to identify your ABHA account. Please try again.',
+        );
+      }
+
+      const patientId = createPatientId(abhaIdentifier);
+
+      if (!patientId) {
+        throw new Error(
+          'Unable to create a valid patient identifier.',
+        );
+      }
+      const now = new Date().toISOString();
+
+      addPatient({
+        patientId,
+        name: patientName,
+        token: authToken,
+        txnId: currentTxnId,
+        aadhaar: null,
+        data: accounts,
+        profileData,
+        createdAt: now,
+        lastLoginAt: now,
+      });
+      setTxnId(currentTxnId);
+      setMessage('OTP verified successfully!');
+      setMessageType('success');
+
+      router.replace('/(home)/(tabs)/abha/abha_profile');
+
     } catch (error: any) {
-      console.log('AADHAAR VERIFY ERROR:', error);
+      console.error('Aadhaar OTP verification error:', error);
 
       const status = error.response?.status;
 
       const backendMessage =
         error.response?.data?.Response?.message ||
-        error.response?.data?.message;
+        error.response?.data?.message ||
+        error.message;
 
       setMessage(
         backendMessage ||
           (status === 429
             ? 'Too many attempts. Please wait before trying again.'
-            : 'Invalid OTP. Please try again.')
+            : 'Invalid OTP. Please try again.'),
       );
 
       setMessageType('error');
+
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  const handleResend = async () => {
+    if (
+      isTimerActive ||
+      isLoading ||
+      resendCount >= 2
+    ) {
+      return;
+    }
+
+    if (!aadhaar) {
+      setMessage(
+        'Aadhaar number is missing. Please go back and try again.',
+      );
+
+      setMessageType('error');
+      return;
+    }
+
+    setIsLoading(true);
+    setMessage('');
+    setMessageType('');
+
+    try {
+      const response = await ABHA.post(
+        'verify/aadhar/request/otp',
+        {
+          aadhar: aadhaar,
+        },
+      );
+
+      if (
+        response.status === 200 ||
+        response.status === 202
+      ) {
+        setResendCount((prev) => prev + 1);
+
+        // Update transaction ID
+        const newTxnId =
+          response.data?.Response?.txnId;
+
+        if (newTxnId) {
+          setCurrentTxnId(newTxnId);
+          setTxnId(newTxnId);
+        }
+
+        // Clear previous OTP
+        setOtp('');
+
+        // Restart timer
+        setTimer(30);
+        setIsTimerActive(true);
+
+        // Unlock verification
+        setIsVerifyLocked(false);
+
+        setMessage(
+          response.data?.Response?.message ||
+            'A new OTP has been sent successfully.',
+        );
+
+        setMessageType('success');
+      } else {
+        setMessage(
+          response.data?.Response?.message ||
+            'Failed to resend OTP.',
+        );
+
+        setMessageType('error');
+      }
+
+    } catch (error: any) {
+      console.error('Resend Aadhaar OTP error:', error);
+
+      setMessage(
+        error.response?.data?.Response?.message ||
+          error.response?.data?.message ||
+          'Failed to resend OTP. Please try again later.',
+      );
+
+      setMessageType('error');
+
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Resend timer
-  const handleResend = () => {
-    if (isTimerActive || isLoading) {
-      return;
-    }
-
-    setTimer(30);
-    setIsTimerActive(true);
-    setOtp('');
-
-    setMessage(
-      'Please request a new OTP from the previous screen.'
-    );
-
-    setMessageType('error');
-  };
-
   const isButtonDisabled =
-    otp.length !== 6 || isLoading;
+    otp.length !== 6 ||
+    isLoading ||
+    isVerifyLocked;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -215,13 +379,17 @@ export default function AadhaarOtpScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
       >
-        {/* Header */}
+        {/* HEADER */}
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <Text style={styles.backIcon}>‹</Text>
+            <Ionicons
+              name="chevron-back"
+              size={24}
+              color="#1F2937"
+            />
           </TouchableOpacity>
 
           <Text style={styles.headerTitle}>
@@ -242,7 +410,7 @@ export default function AadhaarOtpScreen() {
             We've sent a 6-digit OTP to
           </Text>
 
-          {/* Registered Mobile Number */}
+          {/* MOBILE INFORMATION */}
           <View style={styles.mobileInfoBox}>
             <Feather
               name="smartphone"
@@ -255,7 +423,7 @@ export default function AadhaarOtpScreen() {
             </Text>
           </View>
 
-          {/* OTP Input Boxes */}
+          {/* OTP INPUT */}
           <Pressable
             style={styles.otpContainer}
             onPress={() => inputRef.current?.focus()}
@@ -295,7 +463,6 @@ export default function AadhaarOtpScreen() {
               );
             })}
 
-            {/* Hidden TextInput */}
             <TextInput
               ref={inputRef}
               style={styles.hiddenInput}
@@ -310,7 +477,7 @@ export default function AadhaarOtpScreen() {
             />
           </Pressable>
 
-          {/* Error / Success Message */}
+          {/* MESSAGE */}
           {message !== '' && (
             <View
               style={[
@@ -347,37 +514,52 @@ export default function AadhaarOtpScreen() {
             </View>
           )}
 
-          {/* Resend OTP */}
+          {/* RESEND TIMER */}
           <View style={styles.timerContainer}>
             <Text style={styles.timerText}>
               Didn't receive the OTP?{' '}
             </Text>
 
-            <TouchableOpacity
-              onPress={handleResend}
-              disabled={isTimerActive || isLoading}
-            >
+            {isTimerActive ? (
               <Text
                 style={[
                   styles.resendText,
-                  isTimerActive
-                    ? { color: '#9CA3AF' }
-                    : {
-                        color: theme.accent,
-                        fontWeight: '700',
-                      },
+                  { color: '#9CA3AF' },
                 ]}
               >
-                {isTimerActive
-                  ? `Resend in 00:${timer
-                      .toString()
-                      .padStart(2, '0')}`
-                  : 'Resend OTP'}
+                Resend in 00:
+                {timer.toString().padStart(2, '0')}
               </Text>
-            </TouchableOpacity>
+            ) : resendCount < 2 ? (
+              <TouchableOpacity
+                onPress={handleResend}
+                disabled={isLoading}
+              >
+                <Text
+                  style={[
+                    styles.resendText,
+                    {
+                      color: theme.accent,
+                      fontWeight: '700',
+                    },
+                  ]}
+                >
+                  Resend OTP
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text
+                style={[
+                  styles.resendText,
+                  { color: '#9CA3AF' },
+                ]}
+              >
+                Resend limit reached
+              </Text>
+            )}
           </View>
 
-          {/* Verify OTP Button */}
+          {/* VERIFY BUTTON */}
           <TouchableOpacity
             style={[
               styles.button,
@@ -399,14 +581,15 @@ export default function AadhaarOtpScreen() {
             )}
           </TouchableOpacity>
 
+          {/* INFORMATION */}
           <Text style={styles.bottomInfo}>
-            Enter the OTP received on your Aadhaar
-            registered mobile number.
+            Enter the OTP received on your Aadhaar registered
+            mobile number.
           </Text>
 
-          {/* Footer */}
           <View style={styles.spacer} />
 
+          {/* FOOTER */}
           <View style={styles.footer}>
             <Text style={styles.linkText}>
               Terms of Service
@@ -423,7 +606,6 @@ export default function AadhaarOtpScreen() {
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -439,24 +621,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'android' ? 20 : 10,
-    paddingBottom: 15,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
 
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E8F1FA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-
-  backIcon: {
-    fontSize: 28,
-    color: '#0A58CA',
-    fontWeight: '300',
-    marginTop: -4,
+    padding: 4,
+    marginRight: 12,
+    marginLeft: -4,
   },
 
   headerTitle: {
@@ -468,7 +641,7 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 20,
   },
 
   title: {
